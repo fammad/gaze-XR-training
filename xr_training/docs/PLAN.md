@@ -8,6 +8,18 @@ Budget: about 20 hours over Oct 14 to Oct 28.
 
 ---
 
+## 0. For a new chat: read the handover first
+
+Before working on this project in a new chat, read `HANDOVER.md` (in the local project folder `01_eye_tracking_in_VR/`, outside the repo, and as the Project doc `claude/gaze-xr-training_HANDOVER.md`). It has the current state, decisions and their reasons, open issues and working rules.
+Update the handover at the end of every work session.
+
+### Changes since the first version of this plan (2026-10-13)
+- One repo for everything: the Unity project lives in `unity/` (slimmed to what Playground.unity uses). No symlink, no second repo.
+- Orlosky's git history removed; his code is imported as one snapshot commit. His MIT copyright stays in LICENSE.
+- Camera mounted **above** the left lens (not below), hot glued, LEDs diffused. Step 4 is done.
+- In the headset the pupil appears **bright** (IR retro-reflection). Orlosky's dark-pupil search does not work as is; a bright-pupil detector is in progress (`xr_training/tracker/bright_pupil.py`).
+- Controller input goes through Unity XR input (the project uses OpenXR + XR Interaction Toolkit, not the Meta XR Core SDK, so no OVRInput).
+
 ## 1. What we are building (in one picture)
 
 ```

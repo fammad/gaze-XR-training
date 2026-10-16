@@ -1,3 +1,4 @@
+import sys
 import cv2
 import random
 import math
@@ -32,11 +33,19 @@ capture_frame_counter = 0          # counts processed frames while capture is en
 ellipse_capture_interval = 5      # save one ellipse every 10 frames
 max_stuck_ellipses = 20           # safety cap
 
+# OpenCV capture backend for this OS. MSMF only exists on Windows; macOS needs AVFoundation.
+def camera_backend():
+    if sys.platform == "darwin":
+        return cv2.CAP_AVFOUNDATION
+    if sys.platform.startswith("win"):
+        return cv2.CAP_MSMF
+    return cv2.CAP_ANY
+
 # Function to detect available cameras
-def detect_cameras(max_cams=10):
+def detect_cameras(max_cams=5):
     available_cameras = []
     for i in range(max_cams):
-        cap = cv2.VideoCapture(i, cv2.CAP_MSMF)
+        cap = cv2.VideoCapture(i, camera_backend())
         cap.set(cv2.CAP_PROP_FPS, 30)
         if cap.isOpened():
             available_cameras.append(i)
@@ -906,7 +915,7 @@ def process_camera():
     cam_index = int(selected_camera.get())
 
     reset_tracking_state()
-    cap = cv2.VideoCapture(cam_index, cv2.CAP_MSMF)
+    cap = cv2.VideoCapture(cam_index, camera_backend())
 
     if not cap.isOpened():
         print("Error: Could not open camera.")

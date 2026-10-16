@@ -5,8 +5,11 @@ import cv2
 import random
 import math
 import numpy as np
-import tkinter as tk
-from tkinter import ttk, filedialog
+try:
+    import tkinter as tk
+    from tkinter import ttk, filedialog
+except ImportError:   # headless replay does not need the selection window
+    tk = ttk = filedialog = None
 
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "xr_training", "tracker"))
@@ -983,13 +986,14 @@ def process_frame_bright(frame):
     return finish_frame(frame, gray_frame, ellipse, center_x, center_y, confidence, False)
 
 # Process video from the selected camera
-def process_camera():
+def process_camera(cam_index=None):
     global selected_camera
     global capture_stuck_ellipses
     global capture_frame_counter
     global stuck_ellipses
 
-    cam_index = int(selected_camera.get())
+    if cam_index is None:
+        cam_index = int(selected_camera.get())
 
     reset_tracking_state()
     cap = cv2.VideoCapture(cam_index, camera_backend())
@@ -1098,6 +1102,69 @@ def selection_gui():
 
     root.mainloop()
 
+def run_headless_video(path, max_frames=None):
+    """Replay a recording without windows and print a short summary (for testing)."""
+    reset_tracking_state()
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise SystemExit(f"Could not open {path}")
+    n = found = 0
+    t0 = time.time()
+    while max_frames is None or n < max_frames:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = apply_flip(frame)
+        if process_frame(frame) is not None:
+            found += 1
+        n += 1
+    dt = time.time() - t0
+    print(f"{n} frames, pupil found in {found}, {1000*dt/max(n,1):.1f} ms/frame, {gaze_sender.seq} UDP packets to {UDP_HOST}:{UDP_PORT}")
+
+def process_video_path(path):
+    reset_tracking_state()
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        print("Error: Could not open video file.")
+        return
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = apply_flip(frame)
+        process_frame(frame)
+        key = wait_key()
+        if key == ord('q'):
+            break
+        elif key == ord(' '):
+            cv2.waitKey(0)
+        elif key in (ord('f'), ord('F')):
+            toggle_eye_sphere_adjustment()
+    cap.release()
+    cv2.destroyAllWindows()
+
 # Run GUI to select camera or video
 if __name__ == "__main__":
-    selection_gui()
+    import argparse
+    ap = argparse.ArgumentParser(description="Orlosky 3D eye tracker, adapted for macOS and the Quest 3 bright-pupil mount")
+    ap.add_argument("--video", help="play this recording instead of opening the selection window")
+    ap.add_argument("--camera", type=int, help="start this camera index directly")
+    ap.add_argument("--flip", choices=["none", "vertical", "horizontal", "both"], default="none")
+    ap.add_argument("--pupil", choices=["bright", "dark"], default="bright")
+    ap.add_argument("--udp-host", default=UDP_HOST, help="where to send gaze packets (the Quest's IP)")
+    ap.add_argument("--udp-port", type=int, default=UDP_PORT)
+    ap.add_argument("--no-udp", action="store_true", help="do not send gaze packets")
+    ap.add_argument("--headless", action="store_true", help="no windows; with --video, print a summary")
+    ap.add_argument("--max-frames", type=int)
+    args = ap.parse_args()
+    flip_mode, pupil_mode = args.flip, args.pupil
+    UDP_HOST, UDP_PORT, udp_enabled = args.udp_host, args.udp_port, not args.no_udp
+    headless = args.headless
+    if args.video and headless:
+        run_headless_video(args.video, args.max_frames)
+    elif args.video:
+        process_video_path(args.video)
+    elif args.camera is not None:
+        process_camera(args.camera)
+    else:
+        selection_gui()

@@ -17,7 +17,8 @@ Update the handover at the end of every work session.
 - One repo for everything: the Unity project lives in `unity/` (slimmed to what Playground.unity uses). No symlink, no second repo.
 - Orlosky's git history removed; his code is imported as one snapshot commit. His MIT copyright stays in LICENSE.
 - Camera mounted **above** the left lens (not below), hot glued, LEDs diffused. Step 4 is done.
-- In the headset the pupil appears **bright** (IR retro-reflection). Orlosky's dark-pupil search does not work as is; a bright-pupil detector is in progress (`xr_training/tracker/bright_pupil.py`).
+- In the headset the pupil appears **bright** (IR retro-reflection). Orlosky's dark-pupil search does not work as is; a bright-pupil detector replaces it (`xr_training/tracker/bright_pupil.py`, v1 on 2026-10-16).
+- 2026-10-16: Steps 1 and 2 done in code and tested on the recorded video (tracker on macOS, bright pupil, UDP + listener). Still open: live camera test on the Mac (Gate G1).
 - Controller input goes through Unity XR input (the project uses OpenXR + XR Interaction Toolkit, not the Meta XR Core SDK, so no OVRInput).
 
 ## 1. What we are building (in one picture)

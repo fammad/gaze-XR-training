@@ -951,7 +951,8 @@ def process_camera():
 
 # Process a selected video file
 def process_video():
-    video_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4;*.avi")])
+    # Tk on macOS wants space-separated patterns; "*.mp4;*.avi" greys out every file there.
+    video_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4 *.avi *.mov *.m4v"), ("All files", "*")])
 
     if not video_path:
         return  # User canceled selection

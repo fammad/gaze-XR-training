@@ -6,6 +6,10 @@ import numpy as np
 import tkinter as tk
 from tkinter import ttk, filedialog
 
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "xr_training", "tracker"))
+import bright_pupil  # bright-pupil detector for the Quest 3 mount (LEDs next to the lens)
+
 try:
     import gl_sphere
     GL_SPHERE_AVAILABLE = True
@@ -33,8 +37,18 @@ capture_frame_counter = 0          # counts processed frames while capture is en
 ellipse_capture_interval = 5      # save one ellipse every 10 frames
 max_stuck_ellipses = 20           # safety cap
 flip_mode = "none"                 # none / vertical / horizontal / both. Depends on how the camera is mounted.
+pupil_mode = "bright"              # "bright": IR retro-reflection (Quest 3 mount), "dark": Orlosky's original search
+headless = False                   # no windows, for replaying recordings in a terminal
+last_bright_ellipse = None         # previous pupil, lets the bright detector search a small window first
 
 FLIP_CODES = {"vertical": 0, "horizontal": 1, "both": -1}
+
+def show(name, image):
+    if not headless:
+        cv2.imshow(name, image)
+
+def wait_key():
+    return 0xFF if headless else cv2.waitKey(1) & 0xFF
 
 def apply_flip(frame):
     code = FLIP_CODES.get(flip_mode)
@@ -419,9 +433,19 @@ def process_frames(thresholded_image_strict, thresholded_image_medium, threshold
     final_rotated_rect = None
 
     if final_contours and not isinstance(final_contours[0], list) and len(final_contours[0] > 5):
-        ellipse = cv2.fitEllipse(final_contours[0])
-        final_rotated_rect = ellipse
+        final_rotated_rect = cv2.fitEllipse(final_contours[0])
 
+    return finish_frame(frame, gray_frame, final_rotated_rect, center_x, center_y, best_ratio_under_ellipse, render_cv_window)
+
+# Eye model update, gaze and drawing for one pupil ellipse (shared by the dark and bright pupil paths)
+def finish_frame(frame, gray_frame, final_rotated_rect, center_x, center_y, best_ratio_under_ellipse, render_cv_window):
+    global ray_lines
+    global prev_model_center_avg
+    global last_tracking_result
+    global stuck_ellipses
+    global capture_frame_counter
+
+    if final_rotated_rect is not None:
         if (
             eye_sphere_adjustment_enabled
             and best_ratio_under_ellipse >= pupil_confidence_threshold
@@ -510,7 +534,7 @@ def process_frames(thresholded_image_strict, thresholded_image_medium, threshold
 
 
     if render_cv_window:
-        cv2.imshow("Best Thresholded Image Contours on Frame", frame)
+        show("Best Thresholded Image Contours on Frame", frame)
 
 
     if GL_SPHERE_AVAILABLE:
@@ -547,16 +571,17 @@ def process_frames(thresholded_image_strict, thresholded_image_medium, threshold
     cv2.putText(frame, ratio_text, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 4)
     cv2.putText(frame, ratio_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-    cv2.imshow("Frame with Ellipse and Rays", frame)
+    show("Frame with Ellipse and Rays", frame)
 
     if GL_SPHERE_AVAILABLE:
         if gl_image is not None:
             blended = cv2.addWeighted(frame, 0.6, gl_image, 0.4, 0)
-            cv2.imshow("Eye Tracker + Sphere", blended)
+            show("Eye Tracker + Sphere", blended)
 
     return final_rotated_rect
 
 def reset_tracking_state():
+    global last_bright_ellipse
     global ray_lines
     global model_centers
     global prev_model_center_avg
@@ -578,6 +603,7 @@ def reset_tracking_state():
     capture_frame_counter = 0
     stuck_ellipses = []
     last_tracking_result = None
+    last_bright_ellipse = None
 
 def get_last_tracking_result():
     return last_tracking_result
@@ -888,6 +914,9 @@ def process_frame(frame):
     # Crop and resize frame
     frame = crop_to_aspect_ratio(frame)
 
+    if pupil_mode == "bright":
+        return process_frame_bright(frame)
+
     #find the darkest point
     darkest_point = get_darkest_area(frame)
 
@@ -912,6 +941,27 @@ def process_frame(frame):
     return final_rotated_rect
 
 
+# Bright-pupil path: the pupil is found by bright_pupil.detect(); the eye model and gaze code is unchanged.
+# Its confidence is the share of the ellipse outline that is a clear pupil edge (0..1).
+BRIGHT_RAY_CONFIDENCE = 0.75       # min confidence to use an ellipse for the eye-centre estimate
+BRIGHT_SPHERE_CONFIDENCE = 0.65    # min confidence to grow the eye-sphere radius
+BRIGHT_MIN_CONFIDENCE = 0.5        # below this the frame counts as "no pupil" (blink, out of view)
+
+def process_frame_bright(frame):
+    global last_bright_ellipse, pupil_confidence_threshold, pupil_confidence_threshold_sphere
+    pupil_confidence_threshold = BRIGHT_RAY_CONFIDENCE
+    pupil_confidence_threshold_sphere = BRIGHT_SPHERE_CONFIDENCE
+
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    det = bright_pupil.detect(gray_frame, last_bright_ellipse)
+    if det is None or det[1] < BRIGHT_MIN_CONFIDENCE:
+        last_bright_ellipse = None
+        return finish_frame(frame, gray_frame, None, None, None, 0.0, False)
+    ellipse, confidence = det
+    last_bright_ellipse = ellipse
+    center_x, center_y = map(int, ellipse[0])
+    return finish_frame(frame, gray_frame, ellipse, center_x, center_y, confidence, False)
+
 # Process video from the selected camera
 def process_camera():
     global selected_camera
@@ -933,12 +983,12 @@ def process_camera():
         if not ret:
             break
 
-        cv2.imshow("ORiginal Frame", frame)
+        show("ORiginal Frame", frame)
 
         frame = apply_flip(frame)
         process_frame(frame)
 
-        key = cv2.waitKey(1) & 0xFF
+        key = wait_key()
         if key == ord('q'):
             break
         elif key == ord(' '):
@@ -979,7 +1029,7 @@ def process_video():
         frame = apply_flip(frame)
         process_frame(frame)
 
-        key = cv2.waitKey(1) & 0xFF
+        key = wait_key()
         if key == ord('q'):
             break
         elif key == ord(' '):

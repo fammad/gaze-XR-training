@@ -1,407 +1,295 @@
-using System;
-using System.Globalization;
-using System.IO;
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
+/// <summary>
+/// Mono (left eye) gaze from the DIY IR camera, based on Jason Orlosky's EyeTracker.cs (MIT).
+/// Changes: gaze comes over UDP (GazeUdpReceiver) instead of a text file; controller buttons
+/// instead of the keyboard; 5-point calibration (centre, up, right, down, left) instead of 3-point
+/// vertical; gaze origin at the left eye instead of head centre.
+///
+/// Put this on the XR camera (Main Camera under XR Origin).
+/// Right controller A (Editor: K) = calibrate: first press shows the centre target, then each press
+/// captures the target you are looking at and shows the next one.
+/// In the Editor with no tracker running, the mouse acts as fake gaze.
+/// </summary>
+[DefaultExecutionOrder(-10)]
 public class MonoGazeTracker : MonoBehaviour
 {
-    private const string GazeFilePath = @"C:\users\jason\gaze_vector.txt";
+    public enum GazeSource { None, Tracker, Mouse }
+
+    [Header("Input")]
+    public GazeUdpReceiver receiver;
+    [Tooltip("Packets older than this count as no gaze (seconds).")]
+    public float maxSampleAge = 0.25f;
+    [Tooltip("Tracker confidence below this counts as no gaze.")]
+    public float minConfidence = 0.5f;
+    public bool flipX = false;
+    public bool flipY = false;
+
+    [Header("Eye")]
+    [Tooltip("Gaze origin relative to the camera. Left eye: about -0.032 m on x.")]
+    public Vector3 eyeOffset = new Vector3(-0.032f, 0f, 0f);
 
     [Header("Visualization")]
-    public float sphereDistance = 1.0f;
-    public float sphereRadius = 0.05f;
-    public float readInterval = 0.01f;
+    public bool showGazeSphere = true;
+    public float sphereDistance = 2.0f;
+    public float sphereRadius = 0.02f;
+    [Range(0f, 0.95f)] public float displaySmoothing = 0.5f;
 
     [Header("Calibration")]
-    public float verticalCalibrationAngleDegrees = 10.0f;
+    public float calibrationAngleDegrees = 10f;
+    [Tooltip("Gaze is averaged over this long when a target is captured.")]
+    public float captureSeconds = 0.8f;
+    public string calibrateKey = "k";
 
-    [Header("Debug")]
-    public bool verboseLogging = true;
+    [Header("Editor")]
+    public bool useMouseWhenNoTracker = true;
 
-    private GameObject gazeSphere;
-    private GameObject calibrationSphere;
+    // ---- public state, read by GazeLogger and AccuracyGrid ----
+    public GazeSource Source { get; private set; }
+    public bool HasGaze => Source != GazeSource.None;
+    /// <summary>Calibrated gaze direction in camera space (not smoothed).</summary>
+    public Vector3 GazeDirectionLocal { get; private set; } = Vector3.forward;
+    /// <summary>Calibrated gaze ray in world space (not smoothed).</summary>
+    public Ray GazeRayWorld { get; private set; }
+    public float Confidence { get; private set; }
+    public long Seq { get; private set; } = -1;
+    public bool IsCalibrated { get; private set; }
+    public bool IsCalibrating => step >= 0;
 
-    private float nextReadTime = 0f;
+    // ---- calibration model: rotation to centre, then a 2x2 linear map on (yaw, pitch) ----
+    private Quaternion centerRotation = Quaternion.identity;
+    private float m00 = 1f, m01 = 0f, m10 = 0f, m11 = 1f;
 
-    private Vector3 pythonOrigin;
-    private Vector3 pythonDirection;
-
-    private Vector3 latestRawUnityLocalDirection = Vector3.forward;
-    private bool hasValidRawDirection = false;
-
-    private bool hasCalibration = false;
-    private Quaternion calibrationRotation = Quaternion.identity;
-
-    private bool hasVerticalScale = false;
-    private float verticalScaleFactor = 1.0f;
-
-    private float upObservedPitchDegrees = 0f;
-    private float downObservedPitchDegrees = 0f;
-
-    private enum CalibrationStage
+    private static readonly Vector2[] Targets =   // (yaw, pitch) in units of calibrationAngleDegrees
     {
-        Idle,
-        CenterTargetVisible,
-        UpTargetVisible,
-        DownTargetVisible
-    }
+        new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 0), new Vector2(0, -1), new Vector2(-1, 0)
+    };
+    private int step = -1;               // -1 = idle, otherwise index of the target on screen
+    private bool capturing;
+    private readonly List<Vector3> captureBuffer = new List<Vector3>();
+    private readonly List<Vector3> observedCentered = new List<Vector3>();
+    private Vector3 rawCenterMean;
 
-    private CalibrationStage calibrationStage = CalibrationStage.Idle;
+    private Vector3 rawDirectionLocal = Vector3.forward;   // uncalibrated, after flips
+    private Vector3 displayDirection = Vector3.forward;
+    private GameObject gazeSphere, targetSphere;
+    private XRButton calibrateButton;
+    private Camera cam;
 
-    private void Start()
+    private void Awake()
     {
-        CreateGazeSphere();
+        if (receiver == null) receiver = FindFirstObjectByType<GazeUdpReceiver>();
+        if (receiver == null) receiver = gameObject.AddComponent<GazeUdpReceiver>();
+        cam = GetComponent<Camera>();
+        calibrateButton = new XRButton(XRNode.RightHand, CommonUsages.primaryButton, calibrateKey);
+        gazeSphere = MakeSphere("GazeSphere", Color.cyan);
     }
 
     private void Update()
     {
-        if (Time.time >= nextReadTime)
+        ReadRawGaze();
+        if (HasGaze)
         {
-            nextReadTime = Time.time + readInterval;
-            ReadAndApplyGaze();
+            GazeDirectionLocal = ApplyCalibration(rawDirectionLocal);
+            Vector3 origin = transform.TransformPoint(eyeOffset);
+            GazeRayWorld = new Ray(origin, transform.TransformDirection(GazeDirectionLocal));
+            if (capturing) captureBuffer.Add(rawDirectionLocal);
+            displayDirection = Vector3.Slerp(GazeDirectionLocal, displayDirection, displaySmoothing).normalized;
         }
 
-        if (Input.GetKeyDown(KeyCode.B))
-        {
-            CreateFrozenSphereCopy();
-        }
+        gazeSphere.SetActive(showGazeSphere && HasGaze);
+        gazeSphere.transform.localPosition = eyeOffset + displayDirection * sphereDistance;
 
-        if (Input.GetKeyDown(KeyCode.C))
-        {
-            HandleCalibrationKey();
-        }
+        if (calibrateButton.Down() && !capturing) OnCalibratePressed();
     }
 
-    private void HandleCalibrationKey()
+    // ------------------------------------------------------------------ gaze input
+    private void ReadRawGaze()
     {
-        switch (calibrationStage)
+        Source = GazeSource.None;
+        Confidence = 0f;
+
+        bool trackerAlive = receiver != null && receiver.SecondsSinceLastPacket < 1.0;
+        if (trackerAlive && receiver.TryGetLatest(out GazeUdpReceiver.Sample s)
+            && receiver.Now - s.receiveTime <= maxSampleAge
+            && s.confidence >= minConfidence && s.direction.sqrMagnitude > 1e-6f)
         {
-            case CalibrationStage.Idle:
-                ShowCalibrationSphere(Vector3.forward, "CenterCalibrationSphere");
-                calibrationStage = CalibrationStage.CenterTargetVisible;
-
-                if (verboseLogging)
-                    Debug.Log("Center target shown. Look at center sphere and press C again.");
-                break;
-
-            case CalibrationStage.CenterTargetVisible:
-                CaptureCenterCalibration();
-                ShowCalibrationSphere(DirectionFromPitchDegrees(verticalCalibrationAngleDegrees), "UpCalibrationSphere");
-                calibrationStage = CalibrationStage.UpTargetVisible;
-
-                if (verboseLogging)
-                    Debug.Log("Center captured. Up target shown. Look at up sphere and press C again.");
-                break;
-
-            case CalibrationStage.UpTargetVisible:
-                CaptureUpCalibration();
-                ShowCalibrationSphere(DirectionFromPitchDegrees(-verticalCalibrationAngleDegrees), "DownCalibrationSphere");
-                calibrationStage = CalibrationStage.DownTargetVisible;
-
-                if (verboseLogging)
-                    Debug.Log("Up captured. Down target shown. Look at down sphere and press C again.");
-                break;
-
-            case CalibrationStage.DownTargetVisible:
-                CaptureDownCalibration();
-                ComputeVerticalScaleFactor();
-                ClearCalibrationSphere();
-                calibrationStage = CalibrationStage.Idle;
-
-                if (verboseLogging)
-                    Debug.Log("Vertical calibration complete. Scale factor = " + verticalScaleFactor);
-                break;
-        }
-    }
-
-    private void CaptureCenterCalibration()
-    {
-        if (!hasValidRawDirection)
-        {
-            Debug.LogWarning("Center calibration failed: no valid raw gaze direction.");
+            Vector3 d = s.direction.normalized;
+            if (flipX) d.x = -d.x;
+            if (flipY) d.y = -d.y;
+            rawDirectionLocal = d;
+            Confidence = s.confidence;
+            Seq = s.seq;
+            Source = GazeSource.Tracker;
             return;
         }
 
-        Vector3 rawDir = latestRawUnityLocalDirection.normalized;
-
-        calibrationRotation = Quaternion.FromToRotation(rawDir, Vector3.forward);
-        hasCalibration = true;
-
-        // Reset vertical scaling whenever a new center calibration is captured.
-        hasVerticalScale = false;
-        verticalScaleFactor = 1.0f;
-
-        if (verboseLogging)
+        if (!trackerAlive && useMouseWhenNoTracker && Application.isEditor && cam != null
+            && TryGetMousePosition(out Vector2 mouse))
         {
-            Debug.Log("Center calibration captured.");
-            Debug.Log("Raw center direction: " + rawDir);
-            Debug.Log("Calibration rotation: " + calibrationRotation.eulerAngles);
+            Ray r = cam.ScreenPointToRay(mouse);
+            rawDirectionLocal = transform.InverseTransformDirection(r.direction).normalized;
+            Confidence = 1f;
+            Source = GazeSource.Mouse;
         }
     }
 
-    private void CaptureUpCalibration()
+    private static bool TryGetMousePosition(out Vector2 position)
     {
-        if (!hasCalibration || !hasValidRawDirection)
+#if ENABLE_INPUT_SYSTEM
+        if (Mouse.current != null) { position = Mouse.current.position.ReadValue(); return true; }
+        position = default;
+        return false;
+#else
+        position = Input.mousePosition;
+        return true;
+#endif
+    }
+
+    // ------------------------------------------------------------------ calibration model
+    private Vector3 ApplyCalibration(Vector3 raw)
+    {
+        if (!IsCalibrated) return raw;
+        Vector2 a = ToYawPitch(centerRotation * raw);
+        Vector2 corrected = new Vector2(m00 * a.x + m01 * a.y, m10 * a.x + m11 * a.y);
+        return FromYawPitch(corrected);
+    }
+
+    private static Vector2 ToYawPitch(Vector3 d)
+    {
+        d.Normalize();
+        float yaw = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+        float pitch = Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg;
+        return new Vector2(yaw, pitch);
+    }
+
+    private static Vector3 FromYawPitch(Vector2 yp)
+    {
+        float y = yp.x * Mathf.Deg2Rad, p = yp.y * Mathf.Deg2Rad;
+        return new Vector3(Mathf.Cos(p) * Mathf.Sin(y), Mathf.Sin(p), Mathf.Cos(p) * Mathf.Cos(y)).normalized;
+    }
+
+    // ------------------------------------------------------------------ calibration procedure
+    private void OnCalibratePressed()
+    {
+        if (step < 0)
         {
-            Debug.LogWarning("Up calibration failed: missing center calibration or raw direction.");
+            step = 0;
+            observedCentered.Clear();
+            ShowTarget(step);
+            Debug.Log("[Gaze] Calibration: look at the red dot and press A. 5 targets.");
             return;
         }
-
-        Vector3 centeredDirection = (calibrationRotation * latestRawUnityLocalDirection).normalized;
-        upObservedPitchDegrees = GetPitchDegrees(centeredDirection);
-
-        if (verboseLogging)
-            Debug.Log("Up observed pitch degrees: " + upObservedPitchDegrees);
+        StartCoroutine(CaptureTarget());
     }
 
-    private void CaptureDownCalibration()
+    private IEnumerator CaptureTarget()
     {
-        if (!hasCalibration || !hasValidRawDirection)
+        capturing = true;
+        captureBuffer.Clear();
+        SetTargetColor(Color.yellow);
+        yield return new WaitForSeconds(captureSeconds);
+        capturing = false;
+
+        if (captureBuffer.Count < 5)
         {
-            Debug.LogWarning("Down calibration failed: missing center calibration or raw direction.");
-            return;
+            Debug.LogWarning($"[Gaze] Only {captureBuffer.Count} gaze samples, try this target again.");
+            SetTargetColor(Color.red);
+            calibrateButton.Buzz(1f, 0.3f);
+            yield break;
         }
+        Vector3 mean = Vector3.zero;
+        foreach (Vector3 d in captureBuffer) mean += d;
+        mean.Normalize();
+        calibrateButton.Buzz();
 
-        Vector3 centeredDirection = (calibrationRotation * latestRawUnityLocalDirection).normalized;
-        downObservedPitchDegrees = GetPitchDegrees(centeredDirection);
-
-        if (verboseLogging)
-            Debug.Log("Down observed pitch degrees: " + downObservedPitchDegrees);
-    }
-
-    private void ComputeVerticalScaleFactor()
-    {
-        float targetUp = verticalCalibrationAngleDegrees;
-        float targetDown = -verticalCalibrationAngleDegrees;
-
-        bool upValid = Mathf.Abs(upObservedPitchDegrees) > 0.001f;
-        bool downValid = Mathf.Abs(downObservedPitchDegrees) > 0.001f;
-
-        float sum = 0f;
-        int count = 0;
-
-        if (upValid)
+        if (step == 0)
         {
-            float upScale = targetUp / upObservedPitchDegrees;
-            sum += upScale;
-            count++;
-
-            if (verboseLogging)
-                Debug.Log("Up scale estimate: " + upScale);
-        }
-
-        if (downValid)
-        {
-            float downScale = targetDown / downObservedPitchDegrees;
-            sum += downScale;
-            count++;
-
-            if (verboseLogging)
-                Debug.Log("Down scale estimate: " + downScale);
-        }
-
-        if (count > 0)
-        {
-            verticalScaleFactor = sum / count;
-            hasVerticalScale = true;
+            rawCenterMean = mean;
         }
         else
         {
-            verticalScaleFactor = 1.0f;
-            hasVerticalScale = false;
-            Debug.LogWarning("Vertical calibration failed: observed pitch values were too small.");
+            observedCentered.Add(mean);   // stored raw; rotated once the centre is known
         }
-    }
 
-    private void ShowCalibrationSphere(Vector3 localDirection, string sphereName)
-    {
-        ClearCalibrationSphere();
-
-        calibrationSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        calibrationSphere.name = sphereName;
-        calibrationSphere.transform.SetParent(transform, false);
-
-        float diameter = sphereRadius * 2.0f;
-        calibrationSphere.transform.localScale = new Vector3(diameter, diameter, diameter);
-        calibrationSphere.transform.localPosition = localDirection.normalized * sphereDistance;
-        calibrationSphere.transform.localRotation = Quaternion.identity;
-
-        Renderer renderer = calibrationSphere.GetComponent<Renderer>();
-        if (renderer != null)
+        step++;
+        if (step < Targets.Length)
         {
-            renderer.material.color = Color.red;
+            ShowTarget(step);
+            yield break;
         }
+        FinishCalibration();
     }
 
-    private void ClearCalibrationSphere()
+    private void FinishCalibration()
     {
-        if (calibrationSphere != null)
+        Quaternion rot = Quaternion.FromToRotation(rawCenterMean, Vector3.forward);
+        // least squares: target = M * observed, over the 4 outer targets
+        float sto00 = 0, sto01 = 0, sto10 = 0, sto11 = 0, soo00 = 0, soo01 = 0, soo11 = 0;
+        for (int i = 0; i < observedCentered.Count; i++)
         {
-            Destroy(calibrationSphere);
-            calibrationSphere = null;
+            Vector2 o = ToYawPitch(rot * observedCentered[i]);
+            Vector2 t = Targets[i + 1] * calibrationAngleDegrees;
+            sto00 += t.x * o.x; sto01 += t.x * o.y; sto10 += t.y * o.x; sto11 += t.y * o.y;
+            soo00 += o.x * o.x; soo01 += o.x * o.y; soo11 += o.y * o.y;
         }
-    }
-
-    private Vector3 DirectionFromPitchDegrees(float pitchDegrees)
-    {
-        float pitchRad = pitchDegrees * Mathf.Deg2Rad;
-
-        return new Vector3(
-            0f,
-            Mathf.Sin(pitchRad),
-            Mathf.Cos(pitchRad)
-        ).normalized;
-    }
-
-    private float GetPitchDegrees(Vector3 direction)
-    {
-        direction.Normalize();
-
-        float horizontalMagnitude = new Vector2(direction.x, direction.z).magnitude;
-        float pitchRad = Mathf.Atan2(direction.y, horizontalMagnitude);
-
-        return pitchRad * Mathf.Rad2Deg;
-    }
-
-    private Vector3 ApplyVerticalScale(Vector3 direction)
-    {
-        direction.Normalize();
-
-        float yawRad = Mathf.Atan2(direction.x, direction.z);
-        float horizontalMagnitude = new Vector2(direction.x, direction.z).magnitude;
-        float pitchRad = Mathf.Atan2(direction.y, horizontalMagnitude);
-
-        float scaledPitchRad = pitchRad * verticalScaleFactor;
-
-        float newHorizontalMagnitude = Mathf.Cos(scaledPitchRad);
-
-        Vector3 scaledDirection = new Vector3(
-            Mathf.Sin(yawRad) * newHorizontalMagnitude,
-            Mathf.Sin(scaledPitchRad),
-            Mathf.Cos(yawRad) * newHorizontalMagnitude
-        );
-
-        return scaledDirection.normalized;
-    }
-
-    private void CreateFrozenSphereCopy()
-    {
-        if (gazeSphere == null)
-            return;
-
-        GameObject frozenSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        frozenSphere.name = "PythonGazeSphere_Frozen";
-        frozenSphere.transform.position = gazeSphere.transform.position;
-        frozenSphere.transform.rotation = gazeSphere.transform.rotation;
-        frozenSphere.transform.localScale = gazeSphere.transform.lossyScale;
-        frozenSphere.transform.SetParent(null, true);
-    }
-
-    private void CreateGazeSphere()
-    {
-        gazeSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        gazeSphere.name = "PythonGazeSphere";
-
-        gazeSphere.transform.SetParent(transform, false);
-
-        float diameter = sphereRadius * 2.0f;
-        gazeSphere.transform.localScale = new Vector3(diameter, diameter, diameter);
-        gazeSphere.transform.localPosition = Vector3.forward * sphereDistance;
-        gazeSphere.transform.localRotation = Quaternion.identity;
-    }
-
-    private void ReadAndApplyGaze()
-    {
-        string rawText = ReadTextFileSafe(GazeFilePath);
-        if (string.IsNullOrWhiteSpace(rawText))
-            return;
-
-        if (!TryParseSixFloats(rawText, out float[] values))
-            return;
-
-        pythonOrigin = new Vector3(values[0], values[1], values[2]);
-        pythonDirection = new Vector3(values[3], values[4], values[5]);
-
-        Vector3 unityLocalDirection = PythonToUnityDirection(pythonDirection);
-
-        if (unityLocalDirection.sqrMagnitude < 0.000001f)
+        float det = soo00 * soo11 - soo01 * soo01;
+        if (Mathf.Abs(det) < 1e-3f)
         {
-            hasValidRawDirection = false;
+            Debug.LogWarning("[Gaze] Calibration failed: the targets gave almost the same gaze. Is the pupil tracked?");
+            HideTarget();
+            step = -1;
+            calibrateButton.Buzz(1f, 0.5f);
             return;
         }
-
-        unityLocalDirection.Normalize();
-
-        latestRawUnityLocalDirection = unityLocalDirection;
-        hasValidRawDirection = true;
-
-        Vector3 correctedDirection = hasCalibration
-            ? (calibrationRotation * unityLocalDirection).normalized
-            : unityLocalDirection;
-
-        if (hasVerticalScale)
-        {
-            correctedDirection = ApplyVerticalScale(correctedDirection);
-        }
-
-        gazeSphere.transform.localPosition = correctedDirection * sphereDistance;
+        float i00 = soo11 / det, i01 = -soo01 / det, i11 = soo00 / det;
+        centerRotation = rot;
+        m00 = sto00 * i00 + sto01 * i01;
+        m01 = sto00 * i01 + sto01 * i11;
+        m10 = sto10 * i00 + sto11 * i01;
+        m11 = sto10 * i01 + sto11 * i11;
+        IsCalibrated = true;
+        HideTarget();
+        step = -1;
+        Debug.Log($"[Gaze] Calibrated. Map yaw' = {m00:F2} yaw + {m01:F2} pitch, pitch' = {m10:F2} yaw + {m11:F2} pitch");
+        GazeLogger.LogEvent("calibrated");
     }
 
-    private Vector3 PythonToUnityDirection(Vector3 pythonVec)
+    // ------------------------------------------------------------------ visuals
+    private GameObject MakeSphere(string name, Color color)
     {
-        return new Vector3(
-            pythonVec.x,
-            pythonVec.y,
-            pythonVec.z
-        );
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        go.name = name;
+        Destroy(go.GetComponent<Collider>());   // must not block gaze raycasts
+        go.transform.SetParent(transform, false);
+        go.transform.localScale = Vector3.one * sphereRadius * 2f;
+        Renderer r = go.GetComponent<Renderer>();
+        r.material.color = color;
+        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        return go;
     }
 
-    private string ReadTextFileSafe(string path)
+    private void ShowTarget(int index)
     {
-        try
-        {
-            if (!File.Exists(path))
-            {
-                Debug.LogWarning("Gaze file not found: " + path);
-                return null;
-            }
-
-            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (StreamReader reader = new StreamReader(fs))
-            {
-                return reader.ReadToEnd();
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning("Failed to read gaze file: " + e.Message);
-            return null;
-        }
+        if (targetSphere == null) targetSphere = MakeSphere("CalibrationTarget", Color.red);
+        targetSphere.SetActive(true);
+        SetTargetColor(Color.red);
+        targetSphere.transform.localPosition = eyeOffset + FromYawPitch(Targets[index] * calibrationAngleDegrees) * sphereDistance;
     }
 
-    private bool TryParseSixFloats(string text, out float[] values)
+    private void SetTargetColor(Color c)
     {
-        values = null;
+        if (targetSphere != null) targetSphere.GetComponent<Renderer>().material.color = c;
+    }
 
-        string[] tokens = text.Split(
-            new char[] { ',', ' ', '\t', '\r', '\n', ';' },
-            StringSplitOptions.RemoveEmptyEntries
-        );
-
-        if (tokens.Length < 6)
-            return false;
-
-        values = new float[6];
-
-        for (int i = 0; i < 6; i++)
-        {
-            if (!float.TryParse(tokens[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]))
-            {
-                values = null;
-                return false;
-            }
-        }
-
-        return true;
+    private void HideTarget()
+    {
+        if (targetSphere != null) targetSphere.SetActive(false);
     }
 }

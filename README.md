@@ -28,8 +28,8 @@ Mac: analysis -> accuracy, dwell times, eye gaze vs head gaze
 |---|---|
 | Camera mount in the Quest 3 | done (v1) |
 | VR workstation scene | done, based on TacTool |
-| Bright-pupil detection | in progress |
-| Mac camera support, gaze over Wi-Fi | next |
+| Bright-pupil detection | v1 works on recorded video |
+| Mac camera support, gaze over UDP | done, live test in the headset next |
 | Calibration and accuracy test in the headset | planned |
 | Training task, logging, analysis | planned |
 
@@ -42,7 +42,16 @@ The full plan is in [xr_training/docs/PLAN.md](xr_training/docs/PLAN.md).
 - USB cable extended by splicing in a 2 m USB-A cable
 - MacBook Pro M1 Max (no Windows machine, so everything runs on macOS)
 
-One thing I did not expect: inside the headset the LEDs sit so close to the camera lens that the retina reflects them straight back, and the pupil shows up bright instead of dark. Orlosky's tracker searches for a dark pupil, so I am writing a bright-pupil detector ([xr_training/tracker/bright_pupil.py](xr_training/tracker/bright_pupil.py)).
+One thing I did not expect: inside the headset the LEDs sit so close to the camera lens that the retina reflects them straight back, and the pupil shows up bright instead of dark. Orlosky's tracker searches for a dark pupil, so I wrote a bright-pupil detector ([xr_training/tracker/bright_pupil.py](xr_training/tracker/bright_pupil.py)). The two LEDs light the pupil in a left and a right half with a dark band between them, which was the hard part.
+
+<img src="xr_training/docs/img/2026-10-16_bright_pupil_v1.jpg" width="600" alt="Pupil fits on the first headset recording: red is the first version, green the current one">
+
+Run the tracker on a recording (no camera needed), and watch the gaze stream in a second Terminal:
+
+```bash
+python xr_training/tools/udp_listen.py
+python 3DTracker/Orlosky3DEyeTracker.py --video xr_training/data/raw/2026-10-13_gaze_sweep.mov
+```
 
 ## Repo layout
 
@@ -50,6 +59,7 @@ One thing I did not expect: inside the headset the LEDs sit so close to the came
 xr_training/      my work
   docs/           plan, notes, result images
   tracker/        bright-pupil detector
+  tools/          UDP listener for testing the gaze stream
   data/raw/       eye recordings from the headset
 unity/            VR workstation project (Unity 6000.4.5f1, OpenXR, XR Interaction Toolkit)
 media/            photos of the build

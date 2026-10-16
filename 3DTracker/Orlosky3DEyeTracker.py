@@ -32,6 +32,13 @@ stuck_ellipses = []                # saved pupil ellipses
 capture_frame_counter = 0          # counts processed frames while capture is enabled
 ellipse_capture_interval = 5      # save one ellipse every 10 frames
 max_stuck_ellipses = 20           # safety cap
+flip_mode = "none"                 # none / vertical / horizontal / both. Depends on how the camera is mounted.
+
+FLIP_CODES = {"vertical": 0, "horizontal": 1, "both": -1}
+
+def apply_flip(frame):
+    code = FLIP_CODES.get(flip_mode)
+    return frame if code is None else cv2.flip(frame, code)
 
 # OpenCV capture backend for this OS. MSMF only exists on Windows; macOS needs AVFoundation.
 def camera_backend():
@@ -928,7 +935,7 @@ def process_camera():
 
         cv2.imshow("ORiginal Frame", frame)
 
-        frame = cv2.flip(frame, 0)
+        frame = apply_flip(frame)
         process_frame(frame)
 
         key = cv2.waitKey(1) & 0xFF
@@ -969,6 +976,7 @@ def process_video():
         if not ret:
             break
 
+        frame = apply_flip(frame)
         process_frame(frame)
 
         key = cv2.waitKey(1) & 0xFF
@@ -1000,6 +1008,16 @@ def selection_gui():
 
     camera_dropdown = ttk.Combobox(root, textvariable=selected_camera, values=[str(cam) for cam in cameras])
     camera_dropdown.pack(pady=5)
+
+    tk.Label(root, text="Flip image:").pack(pady=5)
+    flip_var = tk.StringVar(value=flip_mode)
+    flip_dropdown = ttk.Combobox(root, textvariable=flip_var, values=["none", "vertical", "horizontal", "both"], state="readonly")
+    flip_dropdown.pack(pady=5)
+
+    def set_flip(*_):
+        global flip_mode
+        flip_mode = flip_var.get()
+    flip_var.trace_add("write", set_flip)
 
     tk.Button(root, text="Start Camera", command=lambda: [root.destroy(), process_camera()]).pack(pady=5)
     tk.Button(root, text="Browse Video", command=lambda: [root.destroy(), process_video()]).pack(pady=5)

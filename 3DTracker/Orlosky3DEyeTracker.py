@@ -160,7 +160,7 @@ def get_darkest_area(image):
                 for dx in range(0, searchArea, internalSkipSize):
                     if x + dx >= gray.shape[1]:
                         break
-                    current_sum += gray[y + dy][x + dx]
+                    current_sum += int(gray[y + dy][x + dx])  # int(): with NumPy 2 a uint8 sum wraps at 256
                     num_pixels += 1
 
             if current_sum < min_sum and num_pixels > 0:

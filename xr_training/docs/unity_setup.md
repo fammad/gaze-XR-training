@@ -4,7 +4,7 @@ Scripts are in `unity/Assets/GazeXR/`. Nothing here was compiled yet; check the 
 
 ## 1. Add the components (once)
 1. Open `unity` in Unity Hub (6000.4.5f1), open `Assets/Scenes/Playground.unity`. Console must show no red errors.
-2. Hierarchy: `XR Origin (VR) > Camera Offset > Main Camera`. Add Component: `MonoGazeTracker`, `GazeLogger`, `AccuracyGrid`. (`GazeUdpReceiver` is added by itself at Play.)
+2. Hierarchy: `XR Origin (VR) > Camera Offset > Main Camera`. Add Component: `MonoGazeTracker`, `GazeLogger`, `AccuracyGrid`, `GazeHeatmap`. (`GazeUdpReceiver` is added by itself at Play.)
 3. Create an empty GameObject `TrainingTask`, add `TrainingTask`.
 4. AOIs: add `GazeAOI` and pick the category. Each needs a collider (add a Box Collider if missing).
 
@@ -26,6 +26,7 @@ Scripts are in `unity/Assets/GazeXR/`. Nothing here was compiled yet; check the 
 | Calibrate (press once to start, then once per red dot, 5 dots) | right A | K |
 | Accuracy grid, 25 dots, about 50 s | right B | L |
 | Task start / end | left X | O |
+| Heatmap show / hide | right thumbstick click | H |
 
 Calibration dot: red = look at it and press, yellow = recording (keep looking 0.8 s), then the next dot. Long buzz = not enough gaze, press again.
 

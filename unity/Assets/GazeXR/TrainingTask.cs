@@ -15,6 +15,8 @@ public class TrainingTask : MonoBehaviour
     public ToolCollisionDetector.ToolType forbiddenTool = ToolCollisionDetector.ToolType.Hammer;
     public string forbiddenMaterialTag = "Marble";
     public string toggleKey = "o";
+    [Tooltip("Start the heatmap fresh when the task starts (calibration and grid looks are not mixed in).")]
+    public bool clearHeatmapOnStart = true;
 
     public bool Running { get; private set; }
     private float startTime;
@@ -50,6 +52,11 @@ public class TrainingTask : MonoBehaviour
         Running = true;
         startTime = Time.time;
         GazeLogger.LogEvent("task_start");
+        if (clearHeatmapOnStart)
+        {
+            GazeHeatmap heatmap = FindFirstObjectByType<GazeHeatmap>();
+            if (heatmap != null) heatmap.Clear();
+        }
         toggleButton.Buzz();
     }
 

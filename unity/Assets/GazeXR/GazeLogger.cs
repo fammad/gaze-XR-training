@@ -45,6 +45,9 @@ public class GazeLogger : MonoBehaviour
         }
     }
 
+    /// <summary>True if this collider is excluded from gaze raycasts (e.g. the held tool).</summary>
+    public static bool IsIgnored(Collider c) => ignored.Contains(c);
+
     private void Awake()
     {
         if (tracker == null) tracker = GetComponent<MonoGazeTracker>();

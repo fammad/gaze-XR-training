@@ -1,4 +1,6 @@
 import sys
+import time
+import socket
 import cv2
 import random
 import math
@@ -42,6 +44,42 @@ headless = False                   # no windows, for replaying recordings in a t
 last_bright_ellipse = None         # previous pupil, lets the bright detector search a small window first
 
 FLIP_CODES = {"vertical": 0, "horizontal": 1, "both": -1}
+
+# ---- Gaze output over UDP (replaces Orlosky's gaze_vector.txt) -------------------------------
+# One ASCII line per processed frame, comma separated:
+#   seq, mac_time, origin_x, origin_y, origin_z, dir_x, dir_y, dir_z, confidence
+# seq        frame counter, starts at 0; gaps on the receiver = lost packets
+# mac_time   time.time() on the Mac when the frame was processed (seconds, Unix epoch)
+# origin     eye-sphere centre in the tracker's own units (camera space, not metres)
+# dir        unit gaze direction in camera space
+# confidence 0..1. 0 = no pupil this frame (blink, eye out of view); origin and dir are 0 then.
+UDP_HOST = "127.0.0.1"   # set to the Quest's IP (Settings > Wi-Fi) to stream to the headset
+UDP_PORT = 5005
+udp_enabled = True
+
+class GazeSender:
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.seq = 0
+        self.errors = 0
+
+    def send(self, origin, direction, confidence):
+        if origin is None or direction is None:
+            origin, direction, confidence = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 0.0
+        line = "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.3f" % (
+            self.seq, time.time(), *map(float, origin), *map(float, direction), float(confidence))
+        self.seq += 1
+        if not udp_enabled:
+            return line
+        try:
+            self.sock.sendto(line.encode("ascii"), (UDP_HOST, UDP_PORT))
+        except OSError as e:          # e.g. network down; keep tracking, report once in a while
+            self.errors += 1
+            if self.errors in (1, 10, 100) or self.errors % 1000 == 0:
+                print(f"UDP send failed ({self.errors}x): {e}")
+        return line
+
+gaze_sender = GazeSender()
 
 def show(name, image):
     if not headless:
@@ -476,6 +514,7 @@ def finish_frame(frame, gray_frame, final_rotated_rect, center_x, center_y, best
     # Example safety check
     if center_x is None or center_y is None or model_center_average[0] is None or model_center_average[1] is None:
         last_tracking_result = None
+        gaze_sender.send(None, None, 0.0)
         return  # or skip this frame
 
     if eye_sphere_adjustment_enabled:
@@ -549,6 +588,7 @@ def finish_frame(frame, gray_frame, final_rotated_rect, center_x, center_y, best
 
     # Call the function
     center, direction = compute_gaze_vector(center_x, center_y, model_center_average[0], model_center_average[1])
+    gaze_sender.send(center, direction, best_ratio_under_ellipse if direction is not None else 0.0)
 
     if center is not None and direction is not None:
         origin_text = f"Origin: ({center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f})"
@@ -877,27 +917,7 @@ def compute_gaze_vector(x, y, center_x, center_y, screen_width=640, screen_heigh
     gaze_rotated = rotation_matrix @ gaze_local
     gaze_rotated /= np.linalg.norm(gaze_rotated)
 
-    # Write to file (overwrite every frame)
-    file_path = "gaze_vector.txt"
-
-    def is_file_available(path):
-        try:
-            with open(path, "a"):
-                return True
-        except IOError:
-            return False
-
-    if is_file_available(file_path):
-        try:
-            with open(file_path, "w") as f:
-                all_values = np.concatenate((sphere_center, gaze_rotated))
-                csv_line = ",".join(f"{v:.6f}" for v in all_values)
-                f.write(csv_line + "\n")
-        except Exception as e:
-            print("Write error:", e)
-    else:
-        print("File is currently in use. Skipping write.")
-
+    # The gaze is sent over UDP by the caller (gaze_sender), not written to gaze_vector.txt any more.
     return sphere_center, gaze_rotated
 
 def draw_stuck_ellipses(frame):

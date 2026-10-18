@@ -51,7 +51,7 @@ public class GazeLogger : MonoBehaviour
     private void Awake()
     {
         if (tracker == null) tracker = GetComponent<MonoGazeTracker>();
-        if (tracker == null) tracker = FindFirstObjectByType<MonoGazeTracker>();
+        if (tracker == null) tracker = FindAnyObjectByType<MonoGazeTracker>();
     }
 
     private void OnEnable()

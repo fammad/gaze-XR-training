@@ -59,6 +59,8 @@ FLIP_CODES = {"vertical": 0, "horizontal": 1, "both": -1}
 UDP_HOST = "127.0.0.1"   # set to the Quest's IP (Settings > Wi-Fi) to stream to the headset
 UDP_PORT = 5005
 udp_enabled = True
+gaze_model = "2d"   # "2d": pupil centre -> direction, Unity calibration does the mapping. "3d": Orlosky eye sphere (needs F).
+PUPIL_2D_FOCAL = 300.0  # pixels; only scales the angles, calibration absorbs it
 
 class GazeSender:
     def __init__(self):
@@ -514,6 +516,22 @@ def finish_frame(frame, gray_frame, final_rotated_rect, center_x, center_y, best
     if model_center_average[0] != 0:
         prev_model_center_avg = model_center_average
     
+    if gaze_model == "2d" and center_x is not None and center_y is not None:
+        h, w = gray_frame.shape[:2]
+        d = np.array([(center_x - w / 2) / PUPIL_2D_FOCAL, (center_y - h / 2) / PUPIL_2D_FOCAL, 1.0])
+        d /= np.linalg.norm(d)
+        gaze_sender.send((0.0, 0.0, 0.0), tuple(d), best_ratio_under_ellipse)
+        last_tracking_result = None
+        if render_cv_window:
+            if final_rotated_rect is not None:
+                cv2.ellipse(frame, final_rotated_rect, (20, 255, 255), 2)
+            cv2.circle(frame, (int(center_x), int(center_y)), 4, (255, 255, 0), -1)
+            cv2.putText(frame, f"{best_ratio_under_ellipse * 100:.0f}%", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(frame, f"2D pupil ({center_x:.0f}, {center_y:.0f})  dir ({d[0]:.2f}, {d[1]:.2f}, {d[2]:.2f})",
+                        (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            show("Frame with Ellipse and Rays", frame)
+        return
+
     # Example safety check
     if center_x is None or center_y is None or model_center_average[0] is None or model_center_average[1] is None:
         last_tracking_result = None
@@ -1156,10 +1174,12 @@ if __name__ == "__main__":
     ap.add_argument("--no-udp", action="store_true", help="do not send gaze packets")
     ap.add_argument("--headless", action="store_true", help="no windows; with --video, print a summary")
     ap.add_argument("--max-frames", type=int)
+    ap.add_argument("--gaze", choices=["2d", "3d"], default="2d", help="2d: pupil centre + Unity calibration (default). 3d: Orlosky eye sphere")
     args = ap.parse_args()
     flip_mode, pupil_mode = args.flip, args.pupil
     UDP_HOST, UDP_PORT, udp_enabled = args.udp_host, args.udp_port, not args.no_udp
     headless = args.headless
+    gaze_model = args.gaze
     if args.video and headless:
         run_headless_video(args.video, args.max_frames)
     elif args.video:

@@ -52,12 +52,8 @@ public class GazeHeatmap : MonoBehaviour
         materials = new Material[Colors.Length];
         for (int i = 0; i < Colors.Length; i++)
         {
+            // No _EMISSION keyword: that shader variant is stripped from Quest builds and renders magenta.
             materials[i] = new Material(baseMat) { color = Colors[i] };
-            if (materials[i].HasProperty("_EmissionColor"))
-            {
-                materials[i].EnableKeyword("_EMISSION");
-                materials[i].SetColor("_EmissionColor", Colors[i] * 0.6f);
-            }
         }
     }
 

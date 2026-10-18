@@ -35,12 +35,14 @@ public class GazeHeatmap : MonoBehaviour
     private Material[] materials;
     private Transform root;
     private XRButton toggleButton;
+    private AccuracyGrid grid;
     private RaycastHit[] hits = new RaycastHit[32];
 
     private void Awake()
     {
         if (tracker == null) tracker = GetComponent<MonoGazeTracker>();
         if (tracker == null) tracker = FindAnyObjectByType<MonoGazeTracker>();
+        grid = FindAnyObjectByType<AccuracyGrid>();
         toggleButton = new XRButton(XRNode.RightHand, CommonUsages.primary2DAxisClick, toggleKey);
         root = new GameObject("GazeHeatmap").transform;   // world space, not under the camera
 
@@ -77,6 +79,7 @@ public class GazeHeatmap : MonoBehaviour
         if (tracker == null || !tracker.HasGaze) return;
         if (onlyWhenCalibrated && !tracker.IsCalibrated && tracker.Source != MonoGazeTracker.GazeSource.Mouse) return;
         if (tracker.IsCalibrating) return;
+        if (grid != null && grid.IsRunning) return;   // test dots are not real looking behaviour
 
         if (!TryHit(tracker.GazeRayWorld, out RaycastHit hit)) return;
         Vector3Int key = Vector3Int.FloorToInt(hit.point / cellSize);

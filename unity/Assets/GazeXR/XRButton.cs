@@ -25,7 +25,7 @@ public class XRButton
     public bool Down()
     {
         bool now = false;
-        InputDevice device = InputDevices.GetDeviceAtXRNode(node);
+        UnityEngine.XR.InputDevice device = InputDevices.GetDeviceAtXRNode(node);
         if (device.isValid && device.TryGetFeatureValue(usage, out bool value)) now = value;
         bool down = now && !previous;
         previous = now;
@@ -35,7 +35,7 @@ public class XRButton
     /// <summary>Short vibration on the controller, as feedback for a solo user.</summary>
     public void Buzz(float amplitude = 0.5f, float seconds = 0.08f)
     {
-        InputDevice device = InputDevices.GetDeviceAtXRNode(node);
+        UnityEngine.XR.InputDevice device = InputDevices.GetDeviceAtXRNode(node);
         if (device.isValid) device.SendHapticImpulse(0, amplitude, seconds);
     }
 

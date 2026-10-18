@@ -40,7 +40,7 @@ public class GazeHeatmap : MonoBehaviour
     private void Awake()
     {
         if (tracker == null) tracker = GetComponent<MonoGazeTracker>();
-        if (tracker == null) tracker = FindFirstObjectByType<MonoGazeTracker>();
+        if (tracker == null) tracker = FindAnyObjectByType<MonoGazeTracker>();
         toggleButton = new XRButton(XRNode.RightHand, CommonUsages.primary2DAxisClick, toggleKey);
         root = new GameObject("GazeHeatmap").transform;   // world space, not under the camera
 

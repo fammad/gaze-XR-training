@@ -36,7 +36,7 @@ public class AccuracyGrid : MonoBehaviour
     private void Awake()
     {
         if (tracker == null) tracker = GetComponent<MonoGazeTracker>();
-        if (tracker == null) tracker = FindFirstObjectByType<MonoGazeTracker>();
+        if (tracker == null) tracker = FindAnyObjectByType<MonoGazeTracker>();
         startButton = new XRButton(XRNode.RightHand, CommonUsages.secondaryButton, startKey);
     }
 

@@ -25,7 +25,7 @@ public class TrainingTask : MonoBehaviour
     private void Start()
     {
         toggleButton = new XRButton(XRNode.LeftHand, CommonUsages.primaryButton, toggleKey);
-        var tools = FindObjectsByType<ToolCollisionDetector>(FindObjectsSortMode.None);
+        var tools = FindObjectsByType<ToolCollisionDetector>();
         foreach (ToolCollisionDetector tool in tools)
         {
             ToolCollisionDetector t = tool;
@@ -54,7 +54,7 @@ public class TrainingTask : MonoBehaviour
         GazeLogger.LogEvent("task_start");
         if (clearHeatmapOnStart)
         {
-            GazeHeatmap heatmap = FindFirstObjectByType<GazeHeatmap>();
+            GazeHeatmap heatmap = FindAnyObjectByType<GazeHeatmap>();
             if (heatmap != null) heatmap.Clear();
         }
         toggleButton.Buzz();

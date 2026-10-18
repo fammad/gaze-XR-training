@@ -84,10 +84,10 @@ public class MonoGazeTracker : MonoBehaviour
 
     private void Awake()
     {
-        if (receiver == null) receiver = FindFirstObjectByType<GazeUdpReceiver>();
+        if (receiver == null) receiver = FindAnyObjectByType<GazeUdpReceiver>();
         if (receiver == null) receiver = gameObject.AddComponent<GazeUdpReceiver>();
         cam = GetComponent<Camera>();
-        calibrateButton = new XRButton(XRNode.RightHand, CommonUsages.primaryButton, calibrateKey);
+        calibrateButton = new XRButton(XRNode.RightHand, UnityEngine.XR.CommonUsages.primaryButton, calibrateKey);
         gazeSphere = MakeSphere("GazeSphere", Color.cyan);
     }
 

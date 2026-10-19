@@ -141,9 +141,11 @@ public class AccuracyGrid : MonoBehaviour
         Destroy(go.GetComponent<Collider>());
         go.transform.SetParent(tracker.transform, false);
         go.transform.localScale = Vector3.one * targetRadius * 2f;
-        go.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        Renderer r = go.GetComponent<Renderer>();
+        r.sharedMaterial = GazeMaterials.Make(Color.white);
+        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         return go;
     }
 
-    private void SetColor(Color c) => target.GetComponent<Renderer>().material.color = c;
+    private void SetColor(Color c) => GazeMaterials.SetColor(target.GetComponent<Renderer>().sharedMaterial, c);
 }

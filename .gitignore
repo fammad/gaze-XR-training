@@ -3,3 +3,4 @@
 __pycache__/
 *.pyc
 gaze_vector.txt
+sessions/

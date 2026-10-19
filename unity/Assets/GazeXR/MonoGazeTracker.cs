@@ -13,7 +13,7 @@ using UnityEngine.InputSystem;
 /// instant accuracy readout; gaze origin at the left eye instead of head centre.
 ///
 /// Put this on the XR camera (Main Camera under XR Origin).
-/// Right controller A (Editor: K) = calibrate: one press runs all 9 dots by itself (keep the head
+/// Right controller B (Editor: K) = calibrate only (A runs the whole session, see SessionRunner): one press runs all 9 dots by itself (keep the head
 /// still, follow the dots with the eyes). Press A again during the run to cancel.
 /// In the Editor with no tracker running, the mouse acts as fake gaze.
 /// </summary>
@@ -99,7 +99,7 @@ public class MonoGazeTracker : MonoBehaviour
         if (receiver == null) receiver = FindAnyObjectByType<GazeUdpReceiver>();
         if (receiver == null) receiver = gameObject.AddComponent<GazeUdpReceiver>();
         cam = GetComponent<Camera>();
-        calibrateButton = new XRButton(XRNode.RightHand, UnityEngine.XR.CommonUsages.primaryButton, calibrateKey);
+        calibrateButton = new XRButton(XRNode.RightHand, UnityEngine.XR.CommonUsages.secondaryButton, calibrateKey);
         gazeSphere = MakeSphere("GazeSphere", Color.cyan);
     }
 
@@ -242,6 +242,12 @@ public class MonoGazeTracker : MonoBehaviour
     }
 
     // ------------------------------------------------------------------ calibration procedure
+    /// <summary>Start the 9-dot calibration from code (SessionRunner). Does nothing if one is running.</summary>
+    public void StartCalibration()
+    {
+        if (calibration == null) calibration = StartCoroutine(RunCalibration());
+    }
+
     private void OnCalibratePressed()
     {
         if (calibration != null)            // second press cancels
@@ -350,7 +356,7 @@ public class MonoGazeTracker : MonoBehaviour
         }
         LastCalibrationError = sum / calibRaw.Count;
         string model = n == 6 ? "polynomial" : "linear";
-        ShowHud($"Calibrated ({model}, {calibRaw.Count}/9 dots)\nmean error {LastCalibrationError:F1}°, worst {worst:F1}°\nA = redo", resultSeconds);
+        ShowHud($"Calibrated ({model}, {calibRaw.Count}/9 dots)\nmean error {LastCalibrationError:F1}°, worst {worst:F1}°\nB = redo", resultSeconds);
         Invoke(nameof(HideResults), resultSeconds);
         calibrateButton.Buzz();
         Debug.Log($"[Gaze] Calibrated {model}, {calibRaw.Count} dots, mean {LastCalibrationError:F2} deg, worst {worst:F2} deg");
@@ -427,7 +433,7 @@ public class MonoGazeTracker : MonoBehaviour
         resultsRoot = null;
     }
 
-    private void ShowHud(string text, float seconds)
+    public void ShowHud(string text, float seconds)
     {
         if (hud == null)
         {

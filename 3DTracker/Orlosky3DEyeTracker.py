@@ -113,6 +113,8 @@ class SessionRecorder:
         self.csv.write(line + "\n")
 
     def close(self):
+        if self.csv.closed:
+            return
         if self.video is not None:
             self.video.release()
         self.csv.close()
@@ -1228,6 +1230,9 @@ if __name__ == "__main__":
         import atexit
         recorder = SessionRecorder(args.record)
         atexit.register(recorder.close)
+        import signal
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))   # run_session.sh stops us with TERM
+        signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
     if args.video and headless:
         run_headless_video(args.video, args.max_frames)
     elif args.video:

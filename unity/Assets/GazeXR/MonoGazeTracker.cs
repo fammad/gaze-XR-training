@@ -342,6 +342,8 @@ public class MonoGazeTracker : MonoBehaviour
         IsCalibrated = true;
         GazeHeatmap heatmap = FindAnyObjectByType<GazeHeatmap>();
         if (heatmap != null) heatmap.Clear();   // dots from before this calibration are wrong
+        GazeScanpath scanpath = FindAnyObjectByType<GazeScanpath>();
+        if (scanpath != null) scanpath.Clear();
 
         // validation on the same dots: where would the calibrated gaze have landed?
         float sum = 0f, worst = 0f;

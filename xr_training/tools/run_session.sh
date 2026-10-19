@@ -16,7 +16,9 @@ pkill -f Orlosky3DEyeTracker.py 2>/dev/null && sleep 1
 python -u 3DTracker/Orlosky3DEyeTracker.py --camera 0 --udp-host "$QUEST_IP" --record "$OUT" > "$OUT/tracker.log" 2>&1 &
 TRACKER=$!
 SCRCPY=""
-if command -v scrcpy >/dev/null; then
+if [ "${NO_SCRCPY:-0}" = 1 ]; then
+  echo "Headset view: use the Quest recorder (NO_SCRCPY=1)."
+elif command -v scrcpy >/dev/null; then
   # Quest 3 shows both eyes side by side; crop the left eye later with
   #   ffmpeg -i headset.mp4 -vf "crop=iw/2:ih:0:0" headset_left.mp4
   scrcpy --no-audio --no-playback --max-size 1920 --video-bit-rate 8M \
@@ -42,6 +44,8 @@ finish() {
   else
     echo "Could not pull headset logs, see $OUT/adb.log"
   fi
+  mkdir -p "$OUT/quest_videos"
+  adb pull /sdcard/Oculus/VideoShots/. "$OUT/quest_videos" >> "$OUT/adb.log" 2>&1 && echo "Pulled Quest recordings (all of them; the newest is this session)."
   echo "Done: $OUT"
   ls -la "$OUT"
   exit 0

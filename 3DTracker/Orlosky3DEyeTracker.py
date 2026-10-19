@@ -45,6 +45,7 @@ max_stuck_ellipses = 20           # safety cap
 flip_mode = "none"                 # none / vertical / horizontal / both. Depends on how the camera is mounted.
 pupil_mode = "mixed"               # "bright": IR retro-reflection (Quest 3 mount), "dark": Orlosky's original search
 headless = False                   # no windows, for replaying recordings in a terminal
+bright_misses = 0
 last_bright_ellipse = None         # previous pupil, lets the bright detector search a small window first
 
 FLIP_CODES = {"vertical": 0, "horizontal": 1, "both": -1}
@@ -1026,7 +1027,7 @@ BRIGHT_SPHERE_CONFIDENCE = 0.65    # min confidence to grow the eye-sphere radiu
 BRIGHT_MIN_CONFIDENCE = 0.5        # below this the frame counts as "no pupil" (blink, out of view)
 
 def process_frame_bright(frame):
-    global last_bright_ellipse, pupil_confidence_threshold, pupil_confidence_threshold_sphere
+    global last_bright_ellipse, bright_misses, pupil_confidence_threshold, pupil_confidence_threshold_sphere
     pupil_confidence_threshold = BRIGHT_RAY_CONFIDENCE
     pupil_confidence_threshold_sphere = BRIGHT_SPHERE_CONFIDENCE
 
@@ -1034,9 +1035,13 @@ def process_frame_bright(frame):
     detector = mixed_pupil if pupil_mode == "mixed" else bright_pupil
     det = detector.detect(gray_frame, last_bright_ellipse)
     if det is None or det[1] < BRIGHT_MIN_CONFIDENCE:
-        last_bright_ellipse = None
+        # keep the last pupil for a short while: it lets the detector reject one-frame jumps
+        bright_misses += 1
+        if bright_misses > 15:
+            last_bright_ellipse = None
         return finish_frame(frame, gray_frame, None, None, None, 0.0, False)
     ellipse, confidence = det
+    bright_misses = 0
     last_bright_ellipse = ellipse
     center_x, center_y = map(int, ellipse[0])
     return finish_frame(frame, gray_frame, ellipse, center_x, center_y, confidence, False)

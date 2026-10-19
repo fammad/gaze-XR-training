@@ -1021,6 +1021,54 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1292479076}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &437487963
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 437487965}
+  - component: {fileID: 437487964}
+  m_Layer: 0
+  m_Name: TrainingTask
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &437487964
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 437487963}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d39ca3f73220f4c0cb5c5f4672b0b232, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TrainingTask
+  forbiddenTool: 0
+  forbiddenMaterialTag: Marble
+  toggleKey: o
+  clearHeatmapOnStart: 1
+--- !u!4 &437487965
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 437487963}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -4.68572, y: -0, z: 1.39663}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &440722594
 GameObject:
   m_ObjectHideFlags: 0
@@ -2285,6 +2333,12 @@ GameObject:
   - component: {fileID: 768817849}
   - component: {fileID: 768817848}
   - component: {fileID: 768817847}
+  - component: {fileID: 768817854}
+  - component: {fileID: 768817853}
+  - component: {fileID: 768817852}
+  - component: {fileID: 768817851}
+  - component: {fileID: 768817855}
+  - component: {fileID: 768817856}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -2519,6 +2573,142 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
+--- !u!114 &768817851
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 768817845}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 68b08bc56504745c9a33b6cf798f3608, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GazeHeatmap
+  tracker: {fileID: 0}
+  cellSize: 0.03
+  maxRayDistance: 20
+  raycastLayers:
+    serializedVersion: 2
+    m_Bits: 51
+  maxCells: 3000
+  visible: 1
+  onlyDuringFixations: 1
+  externalToggle: 0
+  onlyWhenCalibrated: 1
+  toggleKey: h
+--- !u!114 &768817852
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 768817845}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8b956b2ff80b450eba6b893790b3b6e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AccuracyGrid
+  tracker: {fileID: 0}
+  columns: 5
+  rows: 5
+  horizontalHalfAngle: 15
+  verticalHalfAngle: 10
+  settleSeconds: 1
+  recordSeconds: 1
+  targetDistance: 2
+  targetRadius: 0.02
+  startKey: l
+--- !u!114 &768817853
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 768817845}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2be684b7ca2d443ccbed9f9cbef1745a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GazeLogger
+  tracker: {fileID: 0}
+  maxRayDistance: 20
+  raycastLayers:
+    serializedVersion: 2
+    m_Bits: 51
+  logToFile: 1
+--- !u!114 &768817854
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 768817845}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4640a4a6956e24ee0a8057181a881eb0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MonoGazeTracker
+  receiver: {fileID: 0}
+  maxSampleAge: 0.25
+  minConfidence: 0.5
+  flipX: 0
+  flipY: 0
+  eyeOffset: {x: -0.032, y: 0, z: 0}
+  showGazeSphere: 1
+  sphereDistance: 2
+  sphereRadius: 0.02
+  displaySmoothing: 0.5
+  calibrationYawDegrees: 12
+  calibrationPitchDegrees: 9
+  settleSeconds: 0.9
+  captureSeconds: 0.8
+  minSamplesPerTarget: 8
+  resultSeconds: 6
+  calibrateKey: k
+  useMouseWhenNoTracker: 1
+--- !u!114 &768817855
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 768817845}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40a2b4193b9e94bb8b694190427dd731, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SessionRunner
+  tracker: {fileID: 0}
+  grid: {fileID: 0}
+  trainingTask: {fileID: 0}
+  maxCalibrationError: 4
+  startKey: p
+--- !u!114 &768817856
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 768817845}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c806e21b445249d39b20aca0aeb6e6f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GazeScanpath
+  tracker: {fileID: 0}
+  heatmap: {fileID: 0}
+  velocityThreshold: 40
+  minFixationSeconds: 0.12
+  maxGapSeconds: 0.3
+  maxRayDistance: 20
+  baseRadius: 0.012
+  growPerSqrtSecond: 0.025
+  lineWidth: 0.003
+  lineColor: {r: 1, g: 1, b: 1, a: 0.8}
+  maxFixations: 400
+  toggleKey: h
+  view: 2
 --- !u!4 &786736500 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 469742, guid: 1e2caec477e1efa4ba16ee65a0fa358e, type: 3}
@@ -8320,3 +8510,4 @@ SceneRoots:
   - {fileID: 1792071435}
   - {fileID: 1308669853}
   - {fileID: 609492577}
+  - {fileID: 437487965}

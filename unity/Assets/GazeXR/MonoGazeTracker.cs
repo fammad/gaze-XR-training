@@ -9,12 +9,12 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Mono (left eye) gaze from the DIY IR camera, based on Jason Orlosky's EyeTracker.cs (MIT).
 /// Changes: gaze comes over UDP (GazeUdpReceiver) instead of a text file; controller buttons
-/// instead of the keyboard; 5-point calibration (centre, up, right, down, left) instead of 3-point
-/// vertical; gaze origin at the left eye instead of head centre.
+/// instead of the keyboard; automatic 9-dot calibration with a 2nd-order polynomial map and an
+/// instant accuracy readout; gaze origin at the left eye instead of head centre.
 ///
 /// Put this on the XR camera (Main Camera under XR Origin).
-/// Right controller A (Editor: K) = calibrate: first press shows the centre target, then each press
-/// captures the target you are looking at and shows the next one.
+/// Right controller A (Editor: K) = calibrate: one press runs all 9 dots by itself (keep the head
+/// still, follow the dots with the eyes). Press A again during the run to cancel.
 /// In the Editor with no tracker running, the mouse acts as fake gaze.
 /// </summary>
 [DefaultExecutionOrder(-10)]
@@ -41,10 +41,16 @@ public class MonoGazeTracker : MonoBehaviour
     public float sphereRadius = 0.02f;
     [Range(0f, 0.95f)] public float displaySmoothing = 0.5f;
 
-    [Header("Calibration")]
-    public float calibrationAngleDegrees = 10f;
-    [Tooltip("Gaze is averaged over this long when a target is captured.")]
+    [Header("Calibration (9 dots, automatic)")]
+    public float calibrationYawDegrees = 12f;
+    public float calibrationPitchDegrees = 9f;
+    [Tooltip("Time for the eye to land on a new dot before samples count.")]
+    public float settleSeconds = 0.9f;
+    [Tooltip("Samples are collected for this long per dot; the median is used.")]
     public float captureSeconds = 0.8f;
+    public int minSamplesPerTarget = 8;
+    [Tooltip("How long the result (dots + error) stays visible.")]
+    public float resultSeconds = 6f;
     public string calibrateKey = "k";
 
     [Header("Editor")]
@@ -61,20 +67,26 @@ public class MonoGazeTracker : MonoBehaviour
     public long Seq { get; private set; } = -1;
     public bool IsCalibrated { get; private set; }
     public bool IsCalibrating => step >= 0;
+    /// <summary>Mean error over the calibration dots after the last calibration (degrees).</summary>
+    public float LastCalibrationError { get; private set; } = -1f;
 
-    // ---- calibration model: rotation to centre, then a 2x2 linear map on (yaw, pitch) ----
-    private Quaternion centerRotation = Quaternion.identity;
-    private float m00 = 1f, m01 = 0f, m10 = 0f, m11 = 1f;
+    // ---- calibration model (see MapRaw) ----
+    private float[] coefYaw = { 0f, 1f, 0f }, coefPitch = { 0f, 0f, 1f };
 
-    private static readonly Vector2[] Targets =   // (yaw, pitch) in units of calibrationAngleDegrees
+    private static readonly Vector2[] Targets =   // (yaw, pitch) in units of the calibration angles
     {
-        new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 0), new Vector2(0, -1), new Vector2(-1, 0)
+        new Vector2(0, 0), new Vector2(-1, 1), new Vector2(0, 1), new Vector2(1, 1), new Vector2(1, 0),
+        new Vector2(1, -1), new Vector2(0, -1), new Vector2(-1, -1), new Vector2(-1, 0)
     };
     private int step = -1;               // -1 = idle, otherwise index of the target on screen
     private bool capturing;
-    private readonly List<Vector3> captureBuffer = new List<Vector3>();
-    private readonly List<Vector3> observedCentered = new List<Vector3>();
-    private Vector3 rawCenterMean;
+    private long lastCapturedSeq = -1;
+    private Coroutine calibration;
+    private readonly List<Vector2> captureBuffer = new List<Vector2>();
+    private readonly List<Vector2> calibRaw = new List<Vector2>();
+    private readonly List<Vector2> calibTargets = new List<Vector2>();
+    private Transform resultsRoot;
+    private TMPro.TextMeshPro hud;
 
     private Vector3 rawDirectionLocal = Vector3.forward;   // uncalibrated, after flips
     private Vector3 displayDirection = Vector3.forward;
@@ -99,14 +111,18 @@ public class MonoGazeTracker : MonoBehaviour
             GazeDirectionLocal = ApplyCalibration(rawDirectionLocal);
             Vector3 origin = transform.TransformPoint(eyeOffset);
             GazeRayWorld = new Ray(origin, transform.TransformDirection(GazeDirectionLocal));
-            if (capturing) captureBuffer.Add(rawDirectionLocal);
+            if (capturing && (Source != GazeSource.Tracker || Seq != lastCapturedSeq))
+            {
+                captureBuffer.Add(ToYawPitch(rawDirectionLocal));   // one sample per tracker frame
+                lastCapturedSeq = Seq;
+            }
             displayDirection = Vector3.Slerp(GazeDirectionLocal, displayDirection, displaySmoothing).normalized;
         }
 
-        gazeSphere.SetActive(showGazeSphere && HasGaze);
+        gazeSphere.SetActive(showGazeSphere && HasGaze && !IsCalibrating);
         gazeSphere.transform.localPosition = eyeOffset + displayDirection * sphereDistance;
 
-        if (calibrateButton.Down() && !capturing) OnCalibratePressed();
+        if (calibrateButton.Down()) OnCalibratePressed();
     }
 
     // ------------------------------------------------------------------ gaze input
@@ -153,12 +169,30 @@ public class MonoGazeTracker : MonoBehaviour
     }
 
     // ------------------------------------------------------------------ calibration model
+    // Raw gaze as (x, y) = yaw/pitch of the raw direction in degrees. Calibrated yaw and pitch are
+    // each a 2nd-order polynomial of (x, y): c0 + c1 x + c2 y + c3 xy + c4 x^2 + c5 y^2.
+    // With fewer than 8 good targets only the affine part (c0..c2) is fitted.
+    private static float[] Terms(Vector2 r, int n)
+    {
+        float[] t = { 1f, r.x, r.y, r.x * r.y, r.x * r.x, r.y * r.y };
+        if (n == 6) return t;
+        return new[] { t[0], t[1], t[2] };
+    }
+
+    private static float Eval(float[] c, Vector2 r)
+    {
+        float[] t = Terms(r, c.Length);
+        float s = 0f;
+        for (int i = 0; i < c.Length; i++) s += c[i] * t[i];
+        return s;
+    }
+
+    private Vector2 MapRaw(Vector2 raw) => new Vector2(Eval(coefYaw, raw), Eval(coefPitch, raw));
+
     private Vector3 ApplyCalibration(Vector3 raw)
     {
         if (!IsCalibrated) return raw;
-        Vector2 a = ToYawPitch(centerRotation * raw);
-        Vector2 corrected = new Vector2(m00 * a.x + m01 * a.y, m10 * a.x + m11 * a.y);
-        return FromYawPitch(corrected);
+        return FromYawPitch(MapRaw(ToYawPitch(raw)));
     }
 
     private static Vector2 ToYawPitch(Vector3 d)
@@ -175,121 +209,242 @@ public class MonoGazeTracker : MonoBehaviour
         return new Vector3(Mathf.Cos(p) * Mathf.Sin(y), Mathf.Sin(p), Mathf.Cos(p) * Mathf.Cos(y)).normalized;
     }
 
+    /// <summary>Least squares with a tiny ridge term. Returns null if the system is singular.</summary>
+    private static float[] Fit(List<Vector2> raw, List<float> target, int n)
+    {
+        double[,] A = new double[n, n + 1];
+        for (int k = 0; k < raw.Count; k++)
+        {
+            float[] t = Terms(raw[k], n);
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++) A[i, j] += t[i] * t[j];
+                A[i, n] += t[i] * target[k];
+            }
+        }
+        for (int i = 0; i < n; i++) A[i, i] += 1e-6;
+        for (int col = 0; col < n; col++)   // Gaussian elimination, partial pivoting
+        {
+            int piv = col;
+            for (int r = col + 1; r < n; r++) if (System.Math.Abs(A[r, col]) > System.Math.Abs(A[piv, col])) piv = r;
+            if (System.Math.Abs(A[piv, col]) < 1e-9) return null;
+            for (int j = 0; j <= n; j++) { double tmp = A[col, j]; A[col, j] = A[piv, j]; A[piv, j] = tmp; }
+            for (int r = 0; r < n; r++)
+            {
+                if (r == col) continue;
+                double f = A[r, col] / A[col, col];
+                for (int j = col; j <= n; j++) A[r, j] -= f * A[col, j];
+            }
+        }
+        float[] c = new float[n];
+        for (int i = 0; i < n; i++) c[i] = (float)(A[i, n] / A[i, i]);
+        return c;
+    }
+
     // ------------------------------------------------------------------ calibration procedure
     private void OnCalibratePressed()
     {
-        if (step < 0)
+        if (calibration != null)            // second press cancels
         {
-            step = 0;
-            observedCentered.Clear();
-            ShowTarget(step);
-            Debug.Log("[Gaze] Calibration: look at the red dot and press A. 5 targets.");
+            StopCoroutine(calibration);
+            calibration = null;
+            EndCalibrationVisuals();
+            Debug.Log("[Gaze] Calibration cancelled.");
             return;
         }
-        StartCoroutine(CaptureTarget());
+        calibration = StartCoroutine(RunCalibration());
     }
 
-    private IEnumerator CaptureTarget()
+    private IEnumerator RunCalibration()
     {
-        capturing = true;
-        captureBuffer.Clear();
-        SetTargetColor(Color.yellow);
-        yield return new WaitForSeconds(captureSeconds);
-        capturing = false;
+        step = 0;
+        HideResults();
+        calibRaw.Clear(); calibTargets.Clear();
+        GazeLogger.LogEvent("calibration_start");
+        ShowHud("Keep your head still.\nLook at each dot until it disappears.", 0f);
+        yield return new WaitForSeconds(1.5f);
+        ShowHud("", 0f);
 
-        if (captureBuffer.Count < 5)
+        for (int i = 0; i < Targets.Length; i++)
         {
-            Debug.LogWarning($"[Gaze] Only {captureBuffer.Count} gaze samples, try this target again.");
-            SetTargetColor(Color.red);
-            calibrateButton.Buzz(1f, 0.3f);
-            yield break;
+            step = i;
+            Vector2 target = Vector2.Scale(Targets[i], new Vector2(calibrationYawDegrees, calibrationPitchDegrees));
+            bool ok = false;
+            for (int attempt = 0; attempt < 2 && !ok; attempt++)
+            {
+                ShowTarget(target);
+                // settle: the dot shrinks, which pulls the eye to its centre
+                for (float t = 0; t < settleSeconds; t += Time.deltaTime)
+                {
+                    SetTargetScale(Mathf.Lerp(3f, 1f, t / settleSeconds));
+                    yield return null;
+                }
+                SetTargetScale(1f);
+                SetTargetColor(Color.yellow);
+                captureBuffer.Clear();
+                capturing = true;
+                yield return new WaitForSeconds(captureSeconds);
+                capturing = false;
+                if (captureBuffer.Count >= minSamplesPerTarget)
+                {
+                    calibRaw.Add(Median(captureBuffer));
+                    calibTargets.Add(target);
+                    ok = true;
+                }
+                else
+                {
+                    calibrateButton.Buzz(1f, 0.2f);   // lost the pupil: try this dot once more
+                }
+            }
+            calibrateButton.Buzz(0.3f, 0.04f);
         }
-        Vector3 mean = Vector3.zero;
-        foreach (Vector3 d in captureBuffer) mean += d;
-        mean.Normalize();
-        calibrateButton.Buzz();
-
-        if (step == 0)
-        {
-            rawCenterMean = mean;
-        }
-        else
-        {
-            observedCentered.Add(mean);   // stored raw; rotated once the centre is known
-        }
-
-        step++;
-        if (step < Targets.Length)
-        {
-            ShowTarget(step);
-            yield break;
-        }
+        HideTarget();
         FinishCalibration();
+        step = -1;
+        calibration = null;
+    }
+
+    private static Vector2 Median(List<Vector2> v)
+    {
+        List<float> xs = new List<float>(), ys = new List<float>();
+        foreach (Vector2 p in v) { xs.Add(p.x); ys.Add(p.y); }
+        xs.Sort(); ys.Sort();
+        return new Vector2(xs[xs.Count / 2], ys[ys.Count / 2]);
     }
 
     private void FinishCalibration()
     {
-        Quaternion rot = Quaternion.FromToRotation(rawCenterMean, Vector3.forward);
-        // least squares: target = M * observed, over the 4 outer targets
-        float sto00 = 0, sto01 = 0, sto10 = 0, sto11 = 0, soo00 = 0, soo01 = 0, soo11 = 0;
-        for (int i = 0; i < observedCentered.Count; i++)
+        int n = calibRaw.Count >= 8 ? 6 : 3;
+        if (calibRaw.Count < 4)
         {
-            Vector2 o = ToYawPitch(rot * observedCentered[i]);
-            Vector2 t = Targets[i + 1] * calibrationAngleDegrees;
-            sto00 += t.x * o.x; sto01 += t.x * o.y; sto10 += t.y * o.x; sto11 += t.y * o.y;
-            soo00 += o.x * o.x; soo01 += o.x * o.y; soo11 += o.y * o.y;
-        }
-        float det = soo00 * soo11 - soo01 * soo01;
-        if (Mathf.Abs(det) < 1e-3f)
-        {
-            Debug.LogWarning("[Gaze] Calibration failed: the targets gave almost the same gaze. Is the pupil tracked?");
-            HideTarget();
-            step = -1;
+            ShowHud($"Calibration failed: only {calibRaw.Count} of 9 dots had a tracked pupil.\nCheck the tracker window, then press A again.", 6f);
             calibrateButton.Buzz(1f, 0.5f);
+            GazeLogger.LogEvent($"calibration_failed:{calibRaw.Count}");
             return;
         }
-        float i00 = soo11 / det, i01 = -soo01 / det, i11 = soo00 / det;
-        centerRotation = rot;
-        m00 = sto00 * i00 + sto01 * i01;
-        m01 = sto00 * i01 + sto01 * i11;
-        m10 = sto10 * i00 + sto11 * i01;
-        m11 = sto10 * i01 + sto11 * i11;
+        List<float> ty = new List<float>(), tp = new List<float>();
+        foreach (Vector2 t in calibTargets) { ty.Add(t.x); tp.Add(t.y); }
+        float[] cy = Fit(calibRaw, ty, n), cp = Fit(calibRaw, tp, n);
+        if (cy == null || cp == null)
+        {
+            ShowHud("Calibration failed: the dots gave almost the same eye position.\nIs the pupil tracked? Press A again.", 6f);
+            calibrateButton.Buzz(1f, 0.5f);
+            GazeLogger.LogEvent("calibration_failed:singular");
+            return;
+        }
+        coefYaw = cy; coefPitch = cp;
         IsCalibrated = true;
-        HideTarget();
-        step = -1;
-        Debug.Log($"[Gaze] Calibrated. Map yaw' = {m00:F2} yaw + {m01:F2} pitch, pitch' = {m10:F2} yaw + {m11:F2} pitch");
-        GazeLogger.LogEvent("calibrated");
+        GazeHeatmap heatmap = FindAnyObjectByType<GazeHeatmap>();
+        if (heatmap != null) heatmap.Clear();   // dots from before this calibration are wrong
+
+        // validation on the same dots: where would the calibrated gaze have landed?
+        float sum = 0f, worst = 0f;
+        ShowResultsStart();
+        for (int i = 0; i < calibRaw.Count; i++)
+        {
+            Vector3 predicted = FromYawPitch(MapRaw(calibRaw[i]));
+            Vector3 truth = FromYawPitch(calibTargets[i]);
+            float err = Vector3.Angle(predicted, truth);
+            sum += err; worst = Mathf.Max(worst, err);
+            AddResultMarker(truth, predicted, err);
+        }
+        LastCalibrationError = sum / calibRaw.Count;
+        string model = n == 6 ? "polynomial" : "linear";
+        ShowHud($"Calibrated ({model}, {calibRaw.Count}/9 dots)\nmean error {LastCalibrationError:F1}°, worst {worst:F1}°\nA = redo", resultSeconds);
+        Invoke(nameof(HideResults), resultSeconds);
+        calibrateButton.Buzz();
+        Debug.Log($"[Gaze] Calibrated {model}, {calibRaw.Count} dots, mean {LastCalibrationError:F2} deg, worst {worst:F2} deg");
+        GazeLogger.LogEvent($"calibrated:{model}:n={calibRaw.Count}:mean={LastCalibrationError:F2}:worst={worst:F2}");
     }
 
     // ------------------------------------------------------------------ visuals
-    private GameObject MakeSphere(string name, Color color)
+    private GameObject MakeSphere(string name, Color color, Transform parent = null)
     {
         GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = name;
         Destroy(go.GetComponent<Collider>());   // must not block gaze raycasts
-        go.transform.SetParent(transform, false);
+        go.transform.SetParent(parent != null ? parent : transform, false);
         go.transform.localScale = Vector3.one * sphereRadius * 2f;
         Renderer r = go.GetComponent<Renderer>();
-        r.material.color = color;
+        r.sharedMaterial = GazeMaterials.Make(color);
         r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         return go;
     }
 
-    private void ShowTarget(int index)
+    private void ShowTarget(Vector2 yawPitch)
     {
         if (targetSphere == null) targetSphere = MakeSphere("CalibrationTarget", Color.red);
         targetSphere.SetActive(true);
         SetTargetColor(Color.red);
-        targetSphere.transform.localPosition = eyeOffset + FromYawPitch(Targets[index] * calibrationAngleDegrees) * sphereDistance;
+        targetSphere.transform.localPosition = eyeOffset + FromYawPitch(yawPitch) * sphereDistance;
+    }
+
+    private void SetTargetScale(float k)
+    {
+        if (targetSphere != null) targetSphere.transform.localScale = Vector3.one * sphereRadius * 2f * k;
     }
 
     private void SetTargetColor(Color c)
     {
-        if (targetSphere != null) targetSphere.GetComponent<Renderer>().material.color = c;
+        if (targetSphere != null) GazeMaterials.SetColor(targetSphere.GetComponent<Renderer>().sharedMaterial, c);
     }
 
     private void HideTarget()
     {
         if (targetSphere != null) targetSphere.SetActive(false);
     }
+
+    private void EndCalibrationVisuals()
+    {
+        HideTarget();
+        capturing = false;
+        step = -1;
+        ShowHud("", 0f);
+    }
+
+    private void ShowResultsStart()
+    {
+        CancelInvoke(nameof(HideResults));
+        HideResults();
+        resultsRoot = new GameObject("CalibrationResult").transform;
+        resultsRoot.SetParent(transform, false);
+    }
+
+    private void AddResultMarker(Vector3 truth, Vector3 predicted, float err)
+    {
+        GameObject t = MakeSphere("target", Color.white, resultsRoot);
+        t.transform.localPosition = eyeOffset + truth * sphereDistance;
+        t.transform.localScale = Vector3.one * sphereRadius * 1.2f;
+        Color c = err < 1.5f ? Color.green : err < 3f ? Color.yellow : Color.red;
+        GameObject p = MakeSphere("gaze", c, resultsRoot);
+        p.transform.localPosition = eyeOffset + predicted * sphereDistance;
+        p.transform.localScale = Vector3.one * sphereRadius * 1.6f;
+    }
+
+    private void HideResults()
+    {
+        if (resultsRoot != null) Destroy(resultsRoot.gameObject);
+        resultsRoot = null;
+    }
+
+    private void ShowHud(string text, float seconds)
+    {
+        if (hud == null)
+        {
+            GameObject go = new GameObject("GazeHud");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = new Vector3(0f, -0.35f, 1.5f);
+            hud = go.AddComponent<TMPro.TextMeshPro>();
+            hud.fontSize = 0.6f;
+            hud.alignment = TMPro.TextAlignmentOptions.Center;
+            hud.rectTransform.sizeDelta = new Vector2(1.6f, 0.5f);
+            hud.color = Color.white;
+        }
+        hud.text = text;
+        hud.gameObject.SetActive(!string.IsNullOrEmpty(text));
+        CancelInvoke(nameof(ClearHud));
+        if (seconds > 0f) Invoke(nameof(ClearHud), seconds);
+    }
+
+    private void ClearHud() => ShowHud("", 0f);
 }

@@ -46,15 +46,8 @@ public class GazeHeatmap : MonoBehaviour
         toggleButton = new XRButton(XRNode.RightHand, CommonUsages.primary2DAxisClick, toggleKey);
         root = new GameObject("GazeHeatmap").transform;   // world space, not under the camera
 
-        GameObject probe = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        Material baseMat = probe.GetComponent<Renderer>().sharedMaterial;
-        Destroy(probe);
         materials = new Material[Colors.Length];
-        for (int i = 0; i < Colors.Length; i++)
-        {
-            // No _EMISSION keyword: that shader variant is stripped from Quest builds and renders magenta.
-            materials[i] = new Material(baseMat) { color = Colors[i] };
-        }
+        for (int i = 0; i < Colors.Length; i++) materials[i] = GazeMaterials.Make(Colors[i]);
     }
 
     public void Clear()

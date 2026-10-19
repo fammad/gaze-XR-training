@@ -2,7 +2,7 @@
 
 Record the headset with its own recorder (Meta button > Camera > Record video), pull it, then:
 
-    python xr_training/tools/make_pip.py sessions/<folder> <quest_video.mp4> --start 30 --end 60
+    python tools/make_pip.py sessions/<folder> <quest_video.mp4> --start 30 --end 60
 
 --start/--end are seconds into the Quest video. Output next to the session: pip_<start>-<end>.mp4
 (add --gif for a GIF too). Sync: the Quest file name holds its start time

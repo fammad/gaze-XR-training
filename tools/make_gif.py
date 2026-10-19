@@ -1,6 +1,6 @@
 """Make GIFs from a recorded session folder (run_session.sh output).
 
-    python xr_training/tools/make_gif.py sessions/<folder> --start 35 --end 50
+    python tools/make_gif.py sessions/<folder> --start 35 --end 50
 
 Writes into the session folder:
   headset_<start>-<end>.gif   left-eye view of the headset (gaze dot, heatmap, scanpath)

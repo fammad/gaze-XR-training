@@ -1,7 +1,7 @@
 """Check the bright-pupil detector on a recording. Prints a short summary and writes a contact sheet.
 
-    python xr_training/tools/check_video.py ../test_video.mov
-    python xr_training/tools/check_video.py ../test_video.mov --frames 300,540,900,1350
+    python tools/check_video.py ../test_video.mov
+    python tools/check_video.py ../test_video.mov --frames 300,540,900,1350
 
 Output: text summary in the terminal (paste it into the chat) and <video>_check.jpg next to the
 video (drag it into the chat). --csv also saves one row per frame.
@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tracker"))
-import bright_pupil as bp
+import mixed_pupil as bp   # same API as bright_pupil
 
 ap = argparse.ArgumentParser()
 ap.add_argument("video")

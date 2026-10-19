@@ -1,3 +1,13 @@
+"""Eye tracker for an IR camera inside a VR headset: finds the pupil, streams gaze to the headset
+over UDP, and can record the eye video and every gaze packet (--record).
+
+Based on the 3D eye tracker in JEOresearch/EyeTracker (MIT, see THIRD_PARTY_NOTICES.md),
+rewritten for macOS (AVFoundation), a mixed bright/dark pupil detector, 2D gaze with
+headset-side calibration, UDP output and session recording.
+
+    python tracker/eye_tracker.py --camera 0 --udp-host <QUEST_IP>
+    python tracker/eye_tracker.py --video data/samples/gaze_sweep.mov --no-udp
+"""
 import sys
 import time
 import socket
@@ -12,7 +22,7 @@ except ImportError:   # headless replay does not need the selection window
     tk = ttk = filedialog = None
 
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "xr_training", "tracker"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bright_pupil  # bright-pupil detector for the Quest 3 mount (LEDs next to the lens)
 import mixed_pupil   # half bright, half dark pupil: fits the outline, either edge direction
 
@@ -43,14 +53,14 @@ capture_frame_counter = 0          # counts processed frames while capture is en
 ellipse_capture_interval = 5      # save one ellipse every 10 frames
 max_stuck_ellipses = 20           # safety cap
 flip_mode = "none"                 # none / vertical / horizontal / both. Depends on how the camera is mounted.
-pupil_mode = "mixed"               # "bright": IR retro-reflection (Quest 3 mount), "dark": Orlosky's original search
+pupil_mode = "mixed"               # "bright": IR retro-reflection (Quest 3 mount), "dark": the original darkest-blob search
 headless = False                   # no windows, for replaying recordings in a terminal
 bright_misses = 0
 last_bright_ellipse = None         # previous pupil, lets the bright detector search a small window first
 
 FLIP_CODES = {"vertical": 0, "horizontal": 1, "both": -1}
 
-# ---- Gaze output over UDP (replaces Orlosky's gaze_vector.txt) -------------------------------
+# ---- Gaze output over UDP (replaces the original gaze_vector.txt) -------------------------------
 # One ASCII line per processed frame, comma separated:
 #   seq, mac_time, origin_x, origin_y, origin_z, dir_x, dir_y, dir_z, confidence
 # seq        frame counter, starts at 0; gaps on the receiver = lost packets
@@ -61,7 +71,7 @@ FLIP_CODES = {"vertical": 0, "horizontal": 1, "both": -1}
 UDP_HOST = "127.0.0.1"   # set to the Quest's IP (Settings > Wi-Fi) to stream to the headset
 UDP_PORT = 5005
 udp_enabled = True
-gaze_model = "2d"   # "2d": pupil centre -> direction, Unity calibration does the mapping. "3d": Orlosky eye sphere (needs F).
+gaze_model = "2d"   # "2d": pupil centre -> direction, Unity calibration does the mapping. "3d": eye-sphere model (needs F).
 PUPIL_2D_FOCAL = 300.0  # pixels; only scales the angles, calibration absorbs it
 
 class GazeSender:
@@ -1136,7 +1146,7 @@ def selection_gui():
     # Create Tkinter window
     root = tk.Tk()
     root.title("Select Input Source")
-    tk.Label(root, text="Orlosky Eye Tracker 3D", font=("Arial", 12, "bold")).pack(pady=10)
+    tk.Label(root, text="Gaze XR eye tracker", font=("Arial", 12, "bold")).pack(pady=10)
 
     tk.Label(root, text="Select Camera:").pack(pady=5)
 
@@ -1209,7 +1219,7 @@ def process_video_path(path):
 # Run GUI to select camera or video
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="Orlosky 3D eye tracker, adapted for macOS and the Quest 3 bright-pupil mount")
+    ap = argparse.ArgumentParser(description="Eye tracker for an IR camera in a VR headset (macOS)")
     ap.add_argument("--video", help="play this recording instead of opening the selection window")
     ap.add_argument("--camera", type=int, help="start this camera index directly")
     ap.add_argument("--flip", choices=["none", "vertical", "horizontal", "both"], default="none")
@@ -1220,7 +1230,7 @@ if __name__ == "__main__":
     ap.add_argument("--headless", action="store_true", help="no windows; with --video, print a summary")
     ap.add_argument("--max-frames", type=int)
     ap.add_argument("--record", metavar="DIR", help="save the eye video (with overlay) and all gaze packets here")
-    ap.add_argument("--gaze", choices=["2d", "3d"], default="2d", help="2d: pupil centre + Unity calibration (default). 3d: Orlosky eye sphere")
+    ap.add_argument("--gaze", choices=["2d", "3d"], default="2d", help="2d: pupil centre + Unity calibration (default). 3d: eye-sphere model")
     args = ap.parse_args()
     flip_mode, pupil_mode = args.flip, args.pupil
     UDP_HOST, UDP_PORT, udp_enabled = args.udp_host, args.udp_port, not args.no_udp

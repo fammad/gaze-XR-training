@@ -5,9 +5,9 @@ Packet (one ASCII line per frame, comma separated):
 confidence 0 means no pupil in that frame.
 
 Run in a second Terminal, then start the tracker:
-    python xr_training/tools/udp_listen.py              # listen on port 5005
-    python xr_training/tools/udp_listen.py --every 1    # print every packet
-    python xr_training/tools/udp_listen.py --csv log.csv
+    python tools/udp_listen.py              # listen on port 5005
+    python tools/udp_listen.py --every 1    # print every packet
+    python tools/udp_listen.py --csv log.csv
 
 Once a second it prints: packet rate, share of frames with a pupil, lost packets
 (gaps in seq) and delay (only meaningful when tracker and listener run on the same Mac).

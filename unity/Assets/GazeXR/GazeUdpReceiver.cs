@@ -7,7 +7,7 @@ using System.Threading;
 using UnityEngine;
 
 /// <summary>
-/// Receives gaze packets from the Mac tracker (3DTracker/Orlosky3DEyeTracker.py) on a background thread.
+/// Receives gaze packets from the Mac tracker (tracker/eye_tracker.py) on a background thread.
 /// Packet, one ASCII line per UDP datagram:
 ///   seq, mac_time, origin_x, origin_y, origin_z, dir_x, dir_y, dir_z, confidence
 /// confidence 0 = no pupil in that frame (blink, eye out of view).

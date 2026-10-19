@@ -1,7 +1,7 @@
 """Bright-pupil detector for the IR camera inside the Quest 3 (v1, 2026-10-16).
 
 In this mount the two 850 nm LEDs sit right next to the camera lens, so the retina
-reflects them back and the pupil looks BRIGHT. Orlosky's tracker looks for the darkest
+reflects them back and the pupil looks BRIGHT. The original tracker looks for the darkest
 blob, so it needs this alternative.
 
 Each LED lights one half of the pupil, so the pupil shows up as a left and a right lobe

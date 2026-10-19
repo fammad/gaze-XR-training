@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 #endif
 
 /// <summary>
-/// Mono (left eye) gaze from the DIY IR camera, based on Jason Orlosky's EyeTracker.cs (MIT).
+/// Mono (left eye) gaze from the DIY IR camera, based on EyeTracker.cs from JEOresearch/EyeTracker (MIT, see THIRD_PARTY_NOTICES.md).
 /// Changes: gaze comes over UDP (GazeUdpReceiver) instead of a text file; controller buttons
 /// instead of the keyboard; automatic 9-dot calibration with a 2nd-order polynomial map and an
 /// instant accuracy readout; gaze origin at the left eye instead of head centre.

@@ -1,22 +1,22 @@
+# Gaze-XR-training: Eye tracking for any Unity VR scene
 <img src="media/header.gif" width="100%" alt="Headset view of a VR workbench with live fixation spheres, saccade lines and a gaze heatmap, with the IR eye camera in the corner">
 
-# gaze-XR-training: eye tracking for any Unity VR scene
 
 ![Unity](https://img.shields.io/badge/Unity-6-black) ![Quest 3](https://img.shields.io/badge/Meta-Quest%203-blue) ![Python](https://img.shields.io/badge/Python-3.12-yellow) ![OpenCV](https://img.shields.io/badge/OpenCV-4-green) ![macOS](https://img.shields.io/badge/runs%20on-macOS-lightgrey) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
-Add eye tracking to a VR app and see what people actually look at while they use it: live gaze, fixations, scanpaths and heatmaps inside the headset, plus a CSV log and synced videos for analysis afterwards.
+Add eye tracking to an Unity VR scene and see what people actually look at while they use it. This tool provides live gaze, fixations, scanpaths and heatmaps inside the headset, plus a CSV log and synced videos for analysis afterwards.
 
-The Meta Quest 3 has no eye tracker, so this repo also shows how to build one: a small USB infrared camera glued under the lens, a pupil tracker on a Mac, and the gaze streamed to the headset over Wi-Fi. The Unity side does not care where gaze comes from, so the same scripts work with a headset that has eye tracking built in.
+The Meta Quest 3 has no eye tracker, so this repo also shows how to build one yourself with a small USB infrared camera glued under the lens, a pupil tracker on a Mac, and the gaze streamed to the headset over Wi-Fi. The Unity side does not care where gaze comes from, so the same scripts work with a headset that has eye tracking built in.
 
 ## About the project
 
-I first built a VR workbench for testing virtual tools: you shape clay, break rock with a hammer, saw wood. It was made for haptics experiments, and the obvious question afterwards was where people look while they work. Do they watch the tool, the material, or their hand? Do they read the instructions before they start?
+As an example I first built a VR workbench in Unity for testing virtual tools: you shape clay, break rock with a hammer, saw wood. It was made for haptics experiments, and the obvious question afterwards was where people look while they work. Do they watch the tool, the material, or their hand? Do they read the instructions before they start?
 
 So I added eye tracking to it and used the workbench as the test case. The goal was a setup anyone can copy:
 
-1. **Hardware** that costs less than a game and fits inside a Quest 3.
-2. **A gaze toolkit for Unity** that you drop onto the camera of your own scene.
-3. **A session workflow** that gives you numbers and videos without manual work.
+- **Hardware** that costs less than a game and fits inside a Quest 3.
+- **A gaze toolkit for Unity** that you drop onto the camera of your own scene.
+- **A session workflow** that gives you numbers and videos without manual work.
 
 ## What you get
 
@@ -40,21 +40,14 @@ So I added eye tracking to it and used the workbench as the test case. The goal 
 
 ## How it works
 
-| 1. Eye camera | 2. Pupil fit | 3. Calibration | 4. Gaze in the scene |
-|---|---|---|---|
-| <img src="media/step1_eye_camera.jpg" width="220"> | <img src="media/step2_pupil_fit.jpg" width="220"> | <img src="media/step3_calibration.jpg" width="220"> | <img src="media/step4_scanpath.jpg" width="220"> |
-| An IR camera under the lens films the eye. | The Mac finds the pupil outline and its centre, about 10 ms per frame. | Nine dots map pupil position to gaze direction. This run: 0.8° mean, 1.4° worst. | The gaze ray hits the scene: fixations, scanpath, heatmap, looked-at object. |
+<img src="media/how_it_works.jpg" width="100%" alt="Eye camera, pupil fit, calibration result and gaze in the scene">
 
-```
-IR camera (inside the Quest 3)
-   │ USB
-Mac: tracker/eye_tracker.py  → pupil centre → gaze packet (seq, time, direction, confidence)
-   │ UDP over Wi-Fi
-Quest 3: Unity app → calibration → gaze ray → raycast into the scene
-   │                                   ├─ heatmap, scanpath, gaze dot (live)
-   │                                   └─ CSV log (per frame + events)
-Mac: tools/  → accuracy, synced videos, GIFs
-```
+1. **Eye camera.** An IR camera under the lens films the eye.
+2. **Pupil fit.** The Mac finds the pupil outline and its centre, about 10 ms per frame.
+3. **Calibration.** Nine dots map pupil position to gaze direction. This run: 0.8° mean, 1.4° worst.
+4. **Gaze in the scene.** The gaze ray hits the scene: fixations, scanpath, heatmap, looked-at object.
+
+
 
 Every gaze packet has a sequence number. The Mac saves it with the eye video and the headset saves it in its log, so both sides line up frame by frame later.
 
@@ -112,17 +105,9 @@ In the headset, press **A** and follow the instructions. Press Enter on the Mac 
 | B | recalibrate |
 | Thumbstick click | view: heatmap, scanpath, both, off |
 
-**5. Make videos**
-```bash
-python tools/make_gif.py sessions/<folder> --start 30 --end 45                    # side by side
-python tools/make_pip.py sessions/<folder> <quest_recording.mp4> --start 30 --end 60 --gif   # headset + eye inset
-```
-
-**Using a headset with built-in eye tracking?** Skip the camera and the Mac. Feed its gaze direction into `MonoGazeTracker` (it is a single `GazeSource` switch) and everything after that stays the same.
-
 ## Results
 
-Single user (me), one Quest 3, sessions recorded on 19 October 2026. Not a study, a check that the pipeline works.
+Single user (me), one Quest 3, sessions recorded. Not a study, a check that the pipeline works.
 
 | | |
 |---|---|
@@ -146,9 +131,6 @@ The calibration numbers are measured on the calibration dots themselves. The acc
 | One-frame jumps to eyelashes and reflections | a jump is only accepted if the next frame agrees |
 | Gaze dots turned magenta on the Quest | the default material is not drawn by URP in a build; all gaze visuals now use an unlit URP material that is always included |
 | The heatmap drew dotted lines during eye jumps | only fixations are painted (velocity threshold, I-VT) |
-| A Quest app cannot start the Quest recorder | the headset view is recorded over USB with scrcpy or with the built-in recorder, and the tools sync it by clock and sequence number |
-| NumPy 2 broke the dark-pupil search in the original code (uint8 overflow) | fixed |
-| iCloud Desktop sync made duplicate files that broke the Unity project | keep the project outside iCloud folders |
 
 ## Limitations
 

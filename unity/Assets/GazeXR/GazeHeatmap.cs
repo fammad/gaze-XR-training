@@ -18,6 +18,9 @@ public class GazeHeatmap : MonoBehaviour
     public LayerMask raycastLayers = Physics.DefaultRaycastLayers;
     public int maxCells = 3000;
     public bool visible = true;
+    [Tooltip("Only paint while the eye is fixating (needs GazeScanpath). Stops the dotted saccade lines.")]
+    public bool onlyDuringFixations = true;
+    [HideInInspector] public bool externalToggle;   // set by GazeScanpath, which owns the button
     public bool onlyWhenCalibrated = true;
     public string toggleKey = "h";
 
@@ -64,11 +67,12 @@ public class GazeHeatmap : MonoBehaviour
 
     private void Update()
     {
-        if (toggleButton.Down()) SetVisible(!visible);
+        if (!externalToggle && toggleButton.Down()) SetVisible(!visible);
         if (tracker == null || !tracker.HasGaze) return;
         if (onlyWhenCalibrated && !tracker.IsCalibrated && tracker.Source != MonoGazeTracker.GazeSource.Mouse) return;
         if (tracker.IsCalibrating) return;
         if (grid != null && grid.IsRunning) return;   // test dots are not real looking behaviour
+        if (onlyDuringFixations && externalToggle && !GazeScanpath.IsFixating) return;
 
         if (!TryHit(tracker.GazeRayWorld, out RaycastHit hit)) return;
         Vector3Int key = Vector3Int.FloorToInt(hit.point / cellSize);

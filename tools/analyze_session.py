@@ -86,14 +86,12 @@ def main():
     skip = windows(events, "calibration_start", ["calibrated", "calibration_failed"])
     skip += windows(events, "grid_start", ["grid_end"])
     if a.phase == "task":
-        starts = [t for t, e in events if e in ("phase:task", "task_start")]
-        ends = [t for t, e in events if e in ("session_end",)]
-        t0 = starts[-1] if starts else float(rows[0]["time"])
-        t1 = ends[-1] if ends and ends[-1] > t0 else t_end
-        # use the last task start that has more than 30 s after it
-        for s in reversed(starts):
-            if t1 - s > 30:
-                t0 = s; break
+        # the task runs from "phase:task" (SessionRunner) or the first task_start,
+        # to the first task_end / post-task grid / session end after it
+        starts = [t for t, e in events if e == "phase:task"] or [t for t, e in events if e == "task_start"]
+        t0 = starts[0] if starts else float(rows[0]["time"])
+        ends = [t for t, e in events if t > t0 and (e.startswith("task_end") or e in ("phase:grid_post", "session_end"))]
+        t1 = ends[0] if ends else t_end
     else:
         t0, t1 = float(rows[0]["time"]), t_end
     def keep(t):
@@ -152,17 +150,26 @@ def main():
     lane = {g: i for i, g in enumerate(groups[::-1])}
     for s, d, nme, g in fix:
         ax.broken_barh([(s - t0, max(d, 0.08))], (lane[g] - 0.32, 0.64), color=COLOR.get(g, "#8a8984"))
+    last_label = -1e9
     for t, e in events:
         if (e.startswith("grab:") or e.startswith("release:")) and t0 <= t <= t1:
             ax.axvline(t - t0, color=INK2, linewidth=0.8, linestyle=(0, (2, 3)))
-            if e.startswith("grab:"):
-                ax.text(t - t0, len(groups) - 0.35, e.split(":")[1], rotation=0, fontsize=9, color=INK2, ha="left")
+            if e.startswith("grab:") and t - last_label > 0.07 * (t1 - t0):   # skip labels that would overlap
+                ax.text(t - t0 + 0.3, len(groups) - 0.3, e.split(":")[1], fontsize=9, color=INK2, ha="left")
+                last_label = t
+    for t, e in events:
+        if e.startswith("rule_violation") and t0 <= t <= t1:
+            ax.plot([t - t0], [len(groups) - 0.55], marker="v", color="#e34948", markersize=9)
+    viol = [t for t, e in events if e.startswith("rule_violation") and t0 <= t <= t1]
+    if viol:
+        ax.text(viol[-1] - t0 + 1.5, len(groups) - 0.6, "rule broken: " + [e for t, e in events if e.startswith("rule_violation")][0].split(":", 1)[1].replace("_", " "),
+                fontsize=9, color="#b3261e", va="center")
     for s, e in skip:
         if e > t0 and s < t1:
             ax.axvspan(max(s, t0) - t0, min(e, t1) - t0, color=GRID, alpha=0.6, linewidth=0)
     ax.set_yticks(list(lane.values()), list(lane.keys()), color=INK, fontsize=11)
     ax.set_xlim(0, t1 - t0); ax.set_ylim(-0.6, len(groups) + 0.1)
-    ax.set_xlabel("time in task (s)   ·   dashed: grab / release   ·   grey: recalibration, not counted")
+    ax.set_xlabel("time in task (s)   ·   dashed: grab / release   ·   red: rule broken   ·   grey: not counted")
     ax.set_title("Fixations over time", loc="left", color=INK, fontsize=14, pad=12)
     fig.tight_layout(); fig.savefig(os.path.join(a.out, "timeline.png")); plt.close(fig)
 

@@ -113,41 +113,44 @@ Writes the dwell, timeline and eye vs head figures plus a summary table to `docs
 
 ## Results
 
-Single user (me), one Quest 3, sessions recorded. Not a study, a check that the pipeline works.
+Single user (me), one Quest 3. Not a study, a check of what the pipeline can measure. Numbers below are from the session with the best calibration.
 
 | | |
 |---|---|
-| Calibration error (9 dots, polynomial map) | **0.8° mean, 1.4° worst** in the best run, 1.3° to 2.8° in others |
-| Frames with the pupil found | 92 to 93 % over 4 to 6 minute sessions |
+| Calibration fit (9 dots, polynomial map) | **0.8° mean, 1.4° worst** |
+| Accuracy grid right after calibration (25 targets, ±15° × ±10°) | **5.4° in the centre, 9.1° median** |
+| Accuracy grid after the task (about 3 minutes later) | 11.7° in the centre, 16.9° median |
+| Precision (sample-to-sample, median over targets) | 0.9° |
+| Frames with the pupil found | 92 to 93 % |
 | Gaze rate reaching the headset | about 10 per second |
-| Fixations logged in a 4 minute task | 106, median 0.6 s, each with the object looked at |
 
-The calibration numbers are measured on the calibration dots themselves. The accuracy grid, run after it, is the honest test, and there the error grew over the session when the headset moved on my face (see Limitations).
+**The calibration fit is not the accuracy.** The fit is measured on the same dots it was made from. The independent grid shows the real error: about 5° near the centre, worse toward the edges, and it doubles over a few minutes as the headset shifts on the face. Precision stays under 1°, so the gaze is stable but offset. That points at headset slip, not at the pupil detection. I also grabbed a tool during the first grid, which adds some error there.
 
 ### What one task session shows
 
-`tools/analyze_session.py` turns a headset log into the figures below. This is a 2.7 minute task with the saw and the file (calibration 1.3°), with calibration and accuracy checks cut out.
+`tools/analyze_session.py` turns a headset log into the figures below: 99 seconds of work with saw, hammer and file, calibration and accuracy checks cut out.
 
 <img src="docs/analysis/dwell.png" width="49%"> <img src="docs/analysis/eye_vs_head.png" width="49%">
 <img src="docs/analysis/timeline.png" width="100%">
 
 What I read from it:
 
-- **Small objects are hard to hit.** The tool got 1 % of the fixation time and the workbench under it 31 %. A tool handle seen from 60 cm is about 4° wide, so with 1 to 3° error plus some headset slip, gaze meant for the tool often lands on the bench. Object size decides which questions you can ask.
-- **The head is a poor stand-in for the eyes.** In 70 % of samples, eye gaze and head direction were more than 10° apart (median 17°). A study that logs only head direction would put attention on the wrong object much of the time.
-- **The data needs a quality filter.** 19 % of samples put the eye more than 40° off the head direction, more than eyes normally turn. Those are tracking errors, and they come in bursts that a per-sample check can catch.
-- **The timeline shows the work rhythm.** Looks at the room between tool use, a run of fixations on the bench and material around each grab, and the recalibration in the middle.
+- **Large things are measurable, small ones are not.** Material blocks and the workbench got 78 % of the fixation time, tools 6 %. A tool handle at 60 cm is about 4° wide, smaller than the error, so gaze meant for a tool often lands next to it.
+- **The rule break is the interesting moment, and the hardest to judge.** Four forbidden hammer hits on the marble fell inside one long fixation logged on the workbench next to the marble. With about 5° error I cannot say whether I looked at the marble or not. This is exactly the question a trainer would ask, and it shows the accuracy a tracker needs before the answer can be trusted.
+- **The head is a poor stand-in for the eyes.** In 63 % of samples, eye gaze and head direction were more than 10° apart (median 12°). Logging only head direction would often name the wrong object.
+- **A quality filter is cheap and needed.** 1 % of samples put the eye more than 40° off the head direction, more than eyes normally turn. Those are tracking errors and get removed.
+- **The timeline shows the work rhythm.** Material and bench fixations around each grab, short looks at the room in between.
 
-This was a single session from me, so treat these as examples of what the pipeline can show, not as findings about people.
+One session from one person: examples of what the pipeline shows, not findings about people.
 
 ## Blueprint: which gaze metrics this setup can support
 
-Based on the measured accuracy (about 1 to 3° after calibration, more after headset slip) and rate (about 10 samples per second).
+Based on the measured accuracy (about 5° in the centre after calibration, getting worse with headset slip), precision (under 1°) and rate (about 10 samples per second). A commercial headset tracker (about 1°, 90 Hz or more) moves most rows to "yes".
 
-| Metric | What it tells a trainer | What it needs | Here |
+| Metric | What it tells a trainer | What it needs | This setup |
 |---|---|---|---|
-| Dwell time per object | which parts of the station get attention | accuracy well below the object's angular size | yes for large objects (bench, panels, instruction boards); not reliable for small tools |
-| Seen or not seen before an action (for example a safety sign before the first grab) | procedure followed, cue noticed | events in the same log as gaze, object larger than about 5° | yes: grabs, hits and fixations share one timeline |
+| Dwell time per object | which parts of the station get attention | accuracy well below the object's angular size | yes for large objects (bench, material blocks, instruction boards); no for tools |
+| Seen or not seen before an action (a safety sign before the first grab, the material before a hit) | procedure followed, cue noticed | events in the same log as gaze, object about three times the error | partly: the events are there, but small or close objects are ambiguous (see the marble) |
 | Order of fixations (scanpath) | planning, searching vs knowing where to look | fixation detection, about 100 ms timing | coarse: about 100 ms resolution at 10 Hz |
 | Fixation count and duration | searching vs focused work, uncertainty | 30 Hz or more for durations you can compare | rough only |
 | Eye vs head direction | whether a cheaper head-only setup would be enough | eye tracking | yes, and here the answer was no |
@@ -156,9 +159,9 @@ Based on the measured accuracy (about 1 to 3° after calibration, more after hea
 
 **Rules of thumb from building it**
 
-1. Check accuracy at the start and the end of every session, and drop sessions where it falls apart.
-2. Design areas of interest from the accuracy you have: about three times the error. At 2° that is about 6°, roughly a 6 cm object at arm's length.
-3. Log task events next to gaze. "Looked at the sign before grabbing the hammer" is one join, and it is the kind of question trainers ask.
+1. Never report the calibration fit as accuracy. Check with separate targets at the start and the end of every session, and drop sessions where it falls apart.
+2. Design areas of interest from the accuracy you have: about three times the error. At 5° that is about 15°, roughly a 15 cm object at arm's length. At 1° (a good commercial tracker) it is a 3 cm object.
+3. Log task events next to gaze. "Looked at the material before hitting it" is one join, and it is the kind of question trainers ask.
 4. Filter physiologically impossible gaze before computing anything.
 5. Record the eye video. When a number looks odd, the video tells you whether it was the person or the tracker.
 

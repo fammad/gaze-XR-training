@@ -14,6 +14,7 @@ except ImportError:   # headless replay does not need the selection window
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "xr_training", "tracker"))
 import bright_pupil  # bright-pupil detector for the Quest 3 mount (LEDs next to the lens)
+import mixed_pupil   # half bright, half dark pupil: fits the outline, either edge direction
 
 try:
     import gl_sphere
@@ -42,7 +43,7 @@ capture_frame_counter = 0          # counts processed frames while capture is en
 ellipse_capture_interval = 5      # save one ellipse every 10 frames
 max_stuck_ellipses = 20           # safety cap
 flip_mode = "none"                 # none / vertical / horizontal / both. Depends on how the camera is mounted.
-pupil_mode = "bright"              # "bright": IR retro-reflection (Quest 3 mount), "dark": Orlosky's original search
+pupil_mode = "mixed"               # "bright": IR retro-reflection (Quest 3 mount), "dark": Orlosky's original search
 headless = False                   # no windows, for replaying recordings in a terminal
 last_bright_ellipse = None         # previous pupil, lets the bright detector search a small window first
 
@@ -955,7 +956,7 @@ def process_frame(frame):
     # Crop and resize frame
     frame = crop_to_aspect_ratio(frame)
 
-    if pupil_mode == "bright":
+    if pupil_mode in ("bright", "mixed"):
         return process_frame_bright(frame)
 
     #find the darkest point
@@ -994,7 +995,8 @@ def process_frame_bright(frame):
     pupil_confidence_threshold_sphere = BRIGHT_SPHERE_CONFIDENCE
 
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    det = bright_pupil.detect(gray_frame, last_bright_ellipse)
+    detector = mixed_pupil if pupil_mode == "mixed" else bright_pupil
+    det = detector.detect(gray_frame, last_bright_ellipse)
     if det is None or det[1] < BRIGHT_MIN_CONFIDENCE:
         last_bright_ellipse = None
         return finish_frame(frame, gray_frame, None, None, None, 0.0, False)
@@ -1168,7 +1170,7 @@ if __name__ == "__main__":
     ap.add_argument("--video", help="play this recording instead of opening the selection window")
     ap.add_argument("--camera", type=int, help="start this camera index directly")
     ap.add_argument("--flip", choices=["none", "vertical", "horizontal", "both"], default="none")
-    ap.add_argument("--pupil", choices=["bright", "dark"], default="bright")
+    ap.add_argument("--pupil", choices=["mixed", "bright", "dark"], default="mixed")
     ap.add_argument("--udp-host", default=UDP_HOST, help="where to send gaze packets (the Quest's IP)")
     ap.add_argument("--udp-port", type=int, default=UDP_PORT)
     ap.add_argument("--no-udp", action="store_true", help="do not send gaze packets")

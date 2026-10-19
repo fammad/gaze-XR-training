@@ -172,6 +172,26 @@ media/        images and videos for this page
 data/samples/ a short eye video to try the tracker without hardware
 ```
 
+## Citation
+
+If you use this toolkit, the hardware build or the data in your work, please cite it:
+
+```bibtex
+@software{mammadov2026gazexr,
+  author  = {Mammadov, Fuad},
+  title   = {gaze-XR-training: Eye Tracking for Unity VR Scenes with a DIY Infrared Camera},
+  year    = {2026},
+  url     = {https://github.com/fammad/gaze-XR-training},
+  license = {Apache-2.0}
+}
+```
+
+```text
+Mammadov, F. (2026). gaze-XR-training: Eye tracking for Unity VR scenes with a DIY infrared camera [Computer software]. https://github.com/fammad/gaze-XR-training
+```
+
+GitHub also shows a "Cite this repository" button (from [CITATION.cff](CITATION.cff)).
+
 ## Credits
 
 - **Eye tracker base:** the Python 3D eye tracker and the Unity gaze script started from [JEOresearch/EyeTracker](https://github.com/JEOresearch/EyeTracker) by Jason Orlosky (MIT), and the hardware idea from his [DIY VR eye tracking guide](https://www.jeoresearch.com/vrtracker.html). Both were changed a lot here; the original license is kept in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

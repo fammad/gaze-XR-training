@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "gaze-XR-training: Eye Tracking for Unity VR Scenes with a DIY Infrared Camera"
+authors:
+  - family-names: Mammadov
+    given-names: Fuad
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/fammad/gaze-XR-training"
+date-released: 2026-10-20
+keywords:
+  - eye tracking
+  - virtual reality
+  - Unity
+  - Meta Quest 3
+  - gaze
+  - XR training

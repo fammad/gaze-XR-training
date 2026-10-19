@@ -523,7 +523,7 @@ def finish_frame(frame, gray_frame, final_rotated_rect, center_x, center_y, best
         d /= np.linalg.norm(d)
         gaze_sender.send((0.0, 0.0, 0.0), tuple(d), best_ratio_under_ellipse)
         last_tracking_result = None
-        if render_cv_window:
+        if True:   # always show the window, also in the bright/mixed path
             if final_rotated_rect is not None:
                 cv2.ellipse(frame, final_rotated_rect, (20, 255, 255), 2)
             cv2.circle(frame, (int(center_x), int(center_y)), 4, (255, 255, 0), -1)
@@ -537,6 +537,8 @@ def finish_frame(frame, gray_frame, final_rotated_rect, center_x, center_y, best
     if center_x is None or center_y is None or model_center_average[0] is None or model_center_average[1] is None:
         last_tracking_result = None
         gaze_sender.send(None, None, 0.0)
+        cv2.putText(frame, "no pupil", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        show("Frame with Ellipse and Rays", frame)
         return  # or skip this frame
 
     if eye_sphere_adjustment_enabled:

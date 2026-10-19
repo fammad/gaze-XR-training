@@ -10,6 +10,8 @@ QUEST_IP="${1:-192.168.0.106}"
 OUT="sessions/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUT"
 source .venv/bin/activate 2>/dev/null
+# a tracker left over from an earlier run would fight for the camera and send duplicate packets
+pkill -f Orlosky3DEyeTracker.py 2>/dev/null && sleep 1
 
 python -u 3DTracker/Orlosky3DEyeTracker.py --camera 0 --udp-host "$QUEST_IP" --record "$OUT" > "$OUT/tracker.log" 2>&1 &
 TRACKER=$!
@@ -17,7 +19,7 @@ SCRCPY=""
 if command -v scrcpy >/dev/null; then
   # Quest 3 shows both eyes side by side; crop the left eye later with
   #   ffmpeg -i headset.mp4 -vf "crop=iw/2:ih:0:0" headset_left.mp4
-  scrcpy --no-audio --no-playback --max-size 1600 --max-fps 30 --video-bit-rate 8M \
+  scrcpy --no-audio --no-playback --max-size 1920 --video-bit-rate 8M \
          --record "$OUT/headset.mp4" > "$OUT/scrcpy.log" 2>&1 &
   SCRCPY=$!
 else

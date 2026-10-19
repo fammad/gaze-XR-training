@@ -86,6 +86,7 @@ class GazeSender:
         line = "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.3f" % (
             self.seq, time.time(), *map(float, origin), *map(float, direction), float(confidence))
         self.seq += 1
+        self.last_confidence = float(confidence)
         if recorder is not None:
             recorder.row(line)
         if not udp_enabled:
@@ -1188,7 +1189,8 @@ def run_headless_video(path, max_frames=None):
         if not ret:
             break
         frame = apply_flip(frame)
-        if process_frame(frame) is not None:
+        process_frame(frame)
+        if getattr(gaze_sender, "last_confidence", 0.0) >= 0.5:
             found += 1
         n += 1
     dt = time.time() - t0

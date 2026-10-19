@@ -1,85 +1,191 @@
-# gaze-XR-training
+<img src="media/header.gif" width="100%" alt="Headset view of a VR workbench with live fixation spheres, saccade lines and a gaze heatmap, with the IR eye camera in the corner">
 
-DIY eye tracking for the Meta Quest 3, used to see where people look during a VR training task.
+# gaze-XR-training: eye tracking for any Unity VR scene
 
-The Quest 3 has no eye tracker. I mounted a small USB infrared camera inside the headset, track the pupil on my Mac and send the gaze to a Unity app running on the Quest. What I want to find out: what does a trainee look at, what do they miss, and how far can you trust those numbers when the tracker is cheap and home-built.
+![Unity](https://img.shields.io/badge/Unity-6-black) ![Quest 3](https://img.shields.io/badge/Meta-Quest%203-blue) ![Python](https://img.shields.io/badge/Python-3.12-yellow) ![OpenCV](https://img.shields.io/badge/OpenCV-4-green) ![macOS](https://img.shields.io/badge/runs%20on-macOS-lightgrey) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
-<img src="media/hardware/quest3_mount_v1.jpg" width="420" alt="IR camera mounted above the left lens of a Quest 3">
+Add eye tracking to a VR app and see what people actually look at while they use it: live gaze, fixations, scanpaths and heatmaps inside the headset, plus a CSV log and synced videos for analysis afterwards.
 
-## Why
+The Meta Quest 3 has no eye tracker, so this repo also shows how to build one: a small USB infrared camera glued under the lens, a pupil tracker on a Mac, and the gaze streamed to the headset over Wi-Fi. The Unity side does not care where gaze comes from, so the same scripts work with a headset that has eye tracking built in.
 
-More and more industrial training happens in VR. Eye tracking could tell a trainer if someone read the instructions, or noticed a safety sign before picking up a tool. It is less clear which gaze metrics are reliable enough to base feedback on. I would rather test that on a working setup than argue about it in theory.
+## About the project
+
+I first built a VR workbench for testing virtual tools: you shape clay, break rock with a hammer, saw wood. It was made for haptics experiments, and the obvious question afterwards was where people look while they work. Do they watch the tool, the material, or their hand? Do they read the instructions before they start?
+
+So I added eye tracking to it and used the workbench as the test case. The goal was a setup anyone can copy:
+
+1. **Hardware** that costs less than a game and fits inside a Quest 3.
+2. **A gaze toolkit for Unity** that you drop onto the camera of your own scene.
+3. **A session workflow** that gives you numbers and videos without manual work.
+
+## What you get
+
+| | |
+|---|---|
+| **Live gaze in the headset** | a gaze dot, fixation spheres that grow while you look, lines between fixations (the scanpath) and a heatmap on the surfaces you look at |
+| **9-dot calibration** | automatic, shows its own error in the headset right after (dots + mean and worst error in degrees) |
+| **Accuracy grid** | 25 targets before and after a task, so you can see accuracy and drift per session |
+| **Areas of interest** | tag objects (tool, material, instruction, safety sign) and the log tells you which one was looked at |
+| **Session log (CSV)** | per frame: head pose, eye gaze ray, confidence, looked-at object for eye and for head; events for grabs, hits, fixations and calibration |
+| **One-button session** | right controller A runs calibration, grid, task and grid again, with instructions in the headset |
+| **Recording and video tools** | eye video and gaze packets saved on the Mac, headset video, scripts that sync them into side-by-side or picture-in-picture clips and GIFs |
+
+## Use cases
+
+- **VR training:** did the trainee look at the safety sign before picking up the hammer? How long did they spend on the instructions?
+- **Usability tests of VR interfaces:** which buttons and labels get noticed, which are never looked at.
+- **Tool and haptics studies:** does a better haptic tool let people look at the work instead of the tool?
+- **Comparing eye gaze with head direction:** many VR studies use the head as a proxy for attention. The log has both, so you can measure how often they disagree.
+- **Teaching and demos:** a cheap way to show students what eye tracking data looks like and where it breaks.
 
 ## How it works
 
+| 1. Eye camera | 2. Pupil fit | 3. Calibration | 4. Gaze in the scene |
+|---|---|---|---|
+| <img src="media/step1_eye_camera.jpg" width="220"> | <img src="media/step2_pupil_fit.jpg" width="220"> | <img src="media/step3_calibration.jpg" width="220"> | <img src="media/step4_scanpath.jpg" width="220"> |
+| An IR camera under the lens films the eye. | The Mac finds the pupil outline and its centre, about 10 ms per frame. | Nine dots map pupil position to gaze direction. This run: 0.8° mean, 1.4° worst. | The gaze ray hits the scene: fixations, scanpath, heatmap, looked-at object. |
+
 ```
-IR camera (left eye, inside the Quest 3)
-   | USB
-Mac: Python pupil tracker -> gaze vector
-   | UDP over Wi-Fi
-Quest 3: Unity app -> calibration -> gaze ray -> which object is looked at
-   | CSV log
-Mac: analysis -> accuracy, dwell times, eye gaze vs head gaze
+IR camera (inside the Quest 3)
+   │ USB
+Mac: tracker/eye_tracker.py  → pupil centre → gaze packet (seq, time, direction, confidence)
+   │ UDP over Wi-Fi
+Quest 3: Unity app → calibration → gaze ray → raycast into the scene
+   │                                   ├─ heatmap, scanpath, gaze dot (live)
+   │                                   └─ CSV log (per frame + events)
+Mac: tools/  → accuracy, synced videos, GIFs
 ```
 
-## Status
-
-| Part | State |
-|---|---|
-| Camera mount in the Quest 3 | done (v1) |
-| VR workstation scene | done, based on TacTool |
-| Bright-pupil detection | v1 works on recorded video |
-| Mac camera support, gaze over UDP | done, live test in the headset next |
-| Calibration and accuracy test in the headset | planned |
-| Training task, logging, analysis | planned |
-
-The full plan is in [xr_training/docs/PLAN.md](xr_training/docs/PLAN.md).
+Every gaze packet has a sequence number. The Mac saves it with the eye video and the headset saves it in its log, so both sides line up frame by frame later.
 
 ## Hardware
 
-- Meta Quest 3
-- GC0308 USB camera module with two 850 nm IR LEDs, mounted above the left lens. I covered the LEDs with hot glue and paint to spread the light.
-- USB cable extended by splicing in a 2 m USB-A cable
-- MacBook Pro M1 Max (no Windows machine, so everything runs on macOS)
+<img src="media/hardware_overview.jpg" width="49%"> <img src="media/hardware_closeup.jpg" width="49%">
 
-One thing I did not expect: inside the headset the LEDs sit so close to the camera lens that the retina reflects them straight back, and the pupil shows up bright instead of dark. Orlosky's tracker searches for a dark pupil, so I wrote a bright-pupil detector ([xr_training/tracker/bright_pupil.py](xr_training/tracker/bright_pupil.py)). The two LEDs light the pupil in a left and a right half with a dark band between them, which was the hard part.
+| Part | Notes |
+|---|---|
+| Meta Quest 3 | developer mode on, optics not modified |
+| GC0308 USB camera module with two 850 nm IR LEDs | sold for about €10 as a "120 fps" mini camera. It has no IR-cut filter, so it sees the eye in infrared. |
+| Hot glue, paint for the LEDs | the camera board is glued under the lens and points up at the pupil. Glue and paint over the LEDs spread the light. |
+| USB extension | the camera cable is extended with a 2 m USB-A cable to reach the Mac |
+| Mac (Apple silicon) | runs the tracker. Everything here works on macOS, no Windows PC or SteamVR needed. |
 
-<img src="xr_training/docs/img/2026-10-16_bright_pupil_v1.jpg" width="600" alt="Pupil fits on the first headset recording: red is the first version, green the current one">
+**Mounting tips.** Aim the camera before the glue sets, with the tracker window open. Looking straight ahead, the pupil should sit near the middle of the frame and look roughly round. A camera that looks up from too far below sees a flat sliver of pupil and the tracking gets bad. Tape the cable so it cannot pull the camera.
 
-Run the tracker on a recording (no camera needed), and watch the gaze stream in a second Terminal:
+## Set it up yourself
 
+**You need:** Unity 6 with Android build support, a Quest in developer mode, a Mac with Python 3.12, and an IR camera inside the headset (see Hardware). Mac and Quest on the same Wi-Fi.
+
+**1. Tracker on the Mac**
 ```bash
-python xr_training/tools/udp_listen.py
-python 3DTracker/Orlosky3DEyeTracker.py --video xr_training/data/raw/2026-10-13_gaze_sweep.mov
+git clone https://github.com/fammad/gaze-XR-training.git
+cd gaze-XR-training
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python tracker/eye_tracker.py --camera 0 --no-udp
+```
+Wear the headset and check that the yellow ellipse sits on your pupil. No camera yet? Try the sample: `python tracker/eye_tracker.py --video data/samples/gaze_sweep.mov --no-udp`.
+
+**2. Add gaze to your scene.** Copy `unity/Assets/GazeXR/` into your project and put these components on the XR camera (Main Camera under XR Origin):
+
+| Component | Does |
+|---|---|
+| `MonoGazeTracker` | receives gaze, calibrates, gives the gaze ray to everything else |
+| `GazeLogger` | writes the per-frame CSV |
+| `AccuracyGrid` | 25-point accuracy test |
+| `GazeHeatmap`, `GazeScanpath` | live visualisation |
+| `SessionRunner` | one-button session |
+
+Then add `GazeAOI` to the objects you care about and pick a category. They need a collider. Full details: [docs/unity_setup.md](docs/unity_setup.md).
+
+**3. Build** to the Quest (File > Build And Run).
+
+**4. Run a session**
+```bash
+tools/run_session.sh <QUEST_IP>
+```
+In the headset, press **A** and follow the instructions. Press Enter on the Mac when you are done. Everything lands in `sessions/<date_time>/`: eye video, gaze packets, headset video and the headset logs.
+
+| Right controller | |
+|---|---|
+| A | start the session, end the task |
+| B | recalibrate |
+| Thumbstick click | view: heatmap, scanpath, both, off |
+
+**5. Make videos**
+```bash
+python tools/make_gif.py sessions/<folder> --start 30 --end 45                    # side by side
+python tools/make_pip.py sessions/<folder> <quest_recording.mp4> --start 30 --end 60 --gif   # headset + eye inset
 ```
 
-## Repo layout
+**Using a headset with built-in eye tracking?** Skip the camera and the Mac. Feed its gaze direction into `MonoGazeTracker` (it is a single `GazeSource` switch) and everything after that stays the same.
 
-```
-xr_training/      my work
-  docs/           plan, notes, result images
-  tracker/        bright-pupil detector
-  tools/          UDP listener for testing the gaze stream
-  data/raw/       eye recordings from the headset
-unity/            VR workstation project (Unity 6000.4.5f1, OpenXR, XR Interaction Toolkit)
-media/            photos of the build
-3DTracker/        Jason Orlosky's 3D eye tracker (Python), the base I build on
-VREyeTracker/     his Unity calibration scripts
-FrontCameraTracker/, HeadTracker/, Webcam3DTracker/,
-OrloskyPupilDetector*.py, eye_test.mp4
-                  other parts of his original project, not used yet
-```
+## Results
+
+Single user (me), one Quest 3, sessions recorded on 19 October 2026. Not a study, a check that the pipeline works.
+
+| | |
+|---|---|
+| Calibration error (9 dots, polynomial map) | **0.8° mean, 1.4° worst** in the best run, 1.3° to 2.8° in others |
+| Frames with the pupil found | 92 to 93 % over 4 to 6 minute sessions |
+| Gaze rate reaching the headset | about 10 per second |
+| Fixations logged in a 4 minute task | 106, median 0.6 s, each with the object looked at |
+
+The calibration numbers are measured on the calibration dots themselves. The accuracy grid, run after it, is the honest test, and there the error grew over the session when the headset moved on my face (see Limitations).
+
+## Problems and solutions
+
+| Problem | What I did |
+|---|---|
+| The tracker I started from was written for Windows | macOS camera backend (AVFoundation), new file picker, flip option, command-line mode for recorded videos |
+| No SteamVR and no PC link on a Mac | the app runs standalone on the Quest and gaze comes over Wi-Fi as UDP packets |
+| The pupil looked bright, then half bright and half dark, because the LEDs sit next to the camera lens | a pupil detector that follows the pupil outline whichever way the edge goes, then fits an ellipse with RANSAC |
+| The detector fitted only one half of the pupil | ray casting from several start points inside the pupil, keeping the fit that the edges support best |
+| The 3D eyeball model needed a manual step and drifted | 2D pupil position plus a 9-dot calibration in the headset, with the error shown right away |
+| Detection was slow (about 4 gaze samples per second) | rays computed in one go and a search window around the last pupil: about 10 ms per frame |
+| One-frame jumps to eyelashes and reflections | a jump is only accepted if the next frame agrees |
+| Gaze dots turned magenta on the Quest | the default material is not drawn by URP in a build; all gaze visuals now use an unlit URP material that is always included |
+| The heatmap drew dotted lines during eye jumps | only fixations are painted (velocity threshold, I-VT) |
+| A Quest app cannot start the Quest recorder | the headset view is recorded over USB with scrcpy or with the built-in recorder, and the tools sync it by clock and sequence number |
+| NumPy 2 broke the dark-pupil search in the original code (uint8 overflow) | fixed |
+| iCloud Desktop sync made duplicate files that broke the Unity project | keep the project outside iCloud folders |
+
+## Limitations
+
+- **One eye, 2D pupil tracking.** No corneal reflection yet, so if the headset slides on the face the gaze shifts. Recalibrate after you adjust the headset. Using the LED reflections (glints) to correct for this is the next step.
+- **About 10 gaze samples per second.** Enough for fixations on objects, not for saccade analysis. Commercial VR trackers run at 90 to 200 Hz.
+- **Tested on one person.** Eyelids, lashes, glasses and make-up will change how well the pupil is found.
+- **The Mac is in the loop.** The headset needs the Wi-Fi link to the Mac for gaze.
 
 ## Eye safety
 
-The camera lights the eye with infrared from about 3 cm away. Jason Orlosky measured this camera module at 0.27 mW/cm² at 3 cm, far below the 10 mW/cm² screening limit he uses, and my diffusers should lower it further. I have not measured my own build yet. Until then only I wear it, in short sessions.
+The camera lights the eye with infrared from about 3 cm. Jason Orlosky measured this camera module at 0.27 mW/cm² at 3 cm, far below the 10 mW/cm² screening limit he uses, and the glue and paint over the LEDs lower it further. I have not measured my own build. If you build one, read his safety notes first, keep sessions short, and do not put it on other people without a measurement.
+
+## Repository
+
+```
+tracker/      eye tracker (Python): eye_tracker.py, pupil detectors
+tools/        run_session.sh, make_gif.py, make_pip.py, check_video.py, udp_listen.py
+unity/        Unity 6 project, gaze scripts in unity/Assets/GazeXR/
+docs/         Unity setup guide, development images
+media/        images and videos for this page
+data/samples/ a short eye video to try the tracker without hardware
+```
 
 ## Credits
 
-- **Eye tracker:** Jason Orlosky, [JEOresearch/EyeTracker](https://github.com/JEOresearch/EyeTracker) (MIT) and his [DIY VR eye tracking guide](https://www.jeoresearch.com/vrtracker.html). This repo started from a snapshot of his code. I change it for macOS, the Quest 3 and bright-pupil tracking.
-- **VR scene:** TacTool, which I built with my team in the DH2670 Haptics course at KTH. Used and extended with their permission.
-- **3D models:** the packs in `unity/Assets/3D Assets` come from the Unity Asset Store and keep their own licenses. They are not covered by this repo's MIT license.
+- **Eye tracker base:** the Python 3D eye tracker and the Unity gaze script started from [JEOresearch/EyeTracker](https://github.com/JEOresearch/EyeTracker) by Jason Orlosky (MIT), and the hardware idea from his [DIY VR eye tracking guide](https://www.jeoresearch.com/vrtracker.html). Both were changed a lot here; the original license is kept in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **VR workbench:** built with my team in the DH2670 Haptics course at KTH, used here with their permission.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The original tracker code is © 2024 JEOresearch, my changes and new code are © 2026 Fuad Mammadov.
+[Apache License 2.0](LICENSE). Code derived from JEOresearch/EyeTracker stays under its MIT license, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [NOTICE](NOTICE).
+
+## References
+
+- Orlosky, J. *DIY Eye Tracking for VR.* JEO Research. https://www.jeoresearch.com/vrtracker.html
+- JEOresearch/EyeTracker. https://github.com/JEOresearch/EyeTracker
+- Salvucci, D. D., & Goldberg, J. H. (2000). Identifying fixations and saccades in eye-tracking protocols. *Proceedings of ETRA 2000*, 71–78.
+- Holmqvist, K., et al. (2011). *Eye Tracking: A Comprehensive Guide to Methods and Measures.* Oxford University Press.
+- Fischler, M. A., & Bolles, R. C. (1981). Random sample consensus. *Communications of the ACM*, 24(6), 381–395.
+- scrcpy. https://github.com/Genymobile/scrcpy

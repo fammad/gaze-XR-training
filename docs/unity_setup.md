@@ -1,42 +1,64 @@
-# Unity setup for gaze (Steps 3, 5, 6)
+# Add gaze to your Unity scene
 
-Scripts are in `unity/Assets/GazeXR/`. Nothing here was compiled yet; check the Console first.
+Tested with Unity 6000.4, URP, OpenXR + XR Interaction Toolkit 3.x, Meta Quest 3.
+The scripts are in `unity/Assets/GazeXR/`. Copy the folder into your project.
 
-## 1. Add the components (once)
-1. Open `unity` in Unity Hub (6000.4.5f1), open `Assets/Scenes/Playground.unity`. Console must show no red errors.
-2. Hierarchy: `XR Origin (VR) > Camera Offset > Main Camera`. Add Component: `MonoGazeTracker`, `GazeLogger`, `AccuracyGrid`, `GazeHeatmap`. (`GazeUdpReceiver` is added by itself at Play.)
-3. Create an empty GameObject `TrainingTask`, add `TrainingTask`.
-4. AOIs: add `GazeAOI` and pick the category. Each needs a collider (add a Box Collider if missing).
+## 1. Components on the XR camera
 
-| Object | Category |
-|---|---|
-| Chalkboard | Instruction |
-| Rule sign (new, below) | Safety |
-| Red start button | Control |
-| Wood, Metal, Clay, Marble blocks | Material |
-| Hammer, Saw, Chisel | Tool |
+Select the camera that moves with the headset (usually `XR Origin > Camera Offset > Main Camera`) and add:
 
-5. Rule sign: on the marble bench, GameObject > 3D Object > Quad (about 0.3 x 0.15 m), child GameObject > 3D Object > Text - TextMeshPro: "Marble: chisel only. Never the hammer." Small and plain, it should be easy to miss. Add `GazeAOI` (Safety) to the Quad.
-6. Optional: on the red button's interaction event, add `TrainingTask.StartTask`.
-7. Save the scene. Commit the new `.meta` files and the scene in GitHub Desktop.
-
-## 2. Controls
-| Action | Headset | Editor |
+| Component | Needed | Notes |
 |---|---|---|
-| Calibrate (press once to start, then once per red dot, 5 dots) | right A | K |
-| Accuracy grid, 25 dots, about 50 s | right B | L |
-| Task start / end | left X | O |
-| Heatmap show / hide | right thumbstick click | H |
+| `MonoGazeTracker` | yes | receives gaze, calibration, gaze ray. Set `eyeOffset` to the tracked eye: x = -0.032 for the left eye, +0.032 for the right. |
+| `GazeLogger` | yes | CSV log in `<persistentDataPath>/sessions/` |
+| `AccuracyGrid` | recommended | 25-point accuracy test, writes `accuracy_*.csv` |
+| `GazeHeatmap` | optional | live heatmap on surfaces |
+| `GazeScanpath` | optional | fixation spheres and lines; also owns the view toggle |
+| `SessionRunner` | optional | runs calibration, grid, task, grid from one button |
 
-Calibration dot: red = look at it and press, yellow = recording (keep looking 0.8 s), then the next dot. Long buzz = not enough gaze, press again.
+`GazeUdpReceiver` is added at runtime. Gaze packets arrive on UDP port 5005.
 
-## 3. Test in the Editor (no headset, no tracker)
-Play. With no tracker running, the mouse is fake gaze (cyan dot). Press K six times while pointing the mouse at each red dot, then L, then O. Console should show `[GazeLog] Logging to ...` and `[Grid] mean error ...`.
-If the XR Interaction Simulator uses one of these keys, change `calibrateKey` / `startKey` / `toggleKey` in the Inspector.
+## 2. Areas of interest
 
-## 4. On the Quest
-1. Mac and Quest on the same network (home Wi-Fi or phone hotspot, not eduroam). Quest IP: Settings > Wi-Fi > your network.
-2. Unity: Build Profiles > Meta Quest > Build And Run (headset on USB-C, developer mode).
-3. Mac: `python 3DTracker/Orlosky3DEyeTracker.py --camera 1 --udp-host <QUEST_IP>`
-4. In the headset: look around a few seconds, then A to calibrate, B for the grid, X to start the task, X to end, B again for the grid.
-5. Pull logs: `adb pull /sdcard/Android/data/com.UnityTechnologies.com.unity.template.urpblank/files/sessions/ xr_training/data/sessions/`
+Add `GazeAOI` to every object you want in the results and pick a category
+(Instruction, Safety, Control, Material, Tool, Other). The object needs a collider.
+The log then has `eye_aoi` and `head_aoi` for every frame.
+
+## 3. Task events (optional)
+
+`TrainingTask` logs grabs, releases and tool hits from XR Interaction Toolkit grab interactables.
+Add it to any GameObject. For your own events, call `GazeLogger.LogEvent("something")` from any script;
+the text is written into the `events` column of the next row.
+
+## 4. Android / Quest settings
+
+- Player Settings > Android > Internet Access: **Require** (UDP needs it).
+- Graphics settings: `Universal Render Pipeline/Unlit` must be in Always Included Shaders
+  (already set in this project; copy it if you use your own).
+- Build And Run with the headset on USB and developer mode on.
+
+## 5. Controls
+
+| Right controller | Editor key | Action |
+|---|---|---|
+| A | P | run the session (calibration, grid, task, grid). During the task: end it. |
+| B | K | calibration only |
+| Thumbstick click | H | view: heatmap, scanpath, both, off |
+| | L | accuracy grid only |
+
+In the Editor, with no tracker running, the mouse works as fake gaze, so you can test everything without a headset.
+
+## 6. Session output
+
+`session_*.csv` columns: `time, frame, head position and forward, gaze_source, calibrated, seq, confidence,
+eye ray origin and direction, eye_aoi, eye_aoi_category, eye_hit_distance, head_aoi, head_aoi_category,
+head_hit_distance, events`.
+
+Events include `calibrated:<model>:n=..:mean=..:worst=..`, `grid_result:...`, `phase:...`,
+`grab:<tool>`, `hit:<tool>:<material>` and `fix:<object>:<duration ms>`.
+
+Pull the logs with:
+```bash
+adb pull /sdcard/Android/data/<your.package.name>/files/sessions/ sessions/
+```
+(`tools/run_session.sh` does this for you; change the package name in it if yours is different.)

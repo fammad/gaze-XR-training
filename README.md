@@ -4,7 +4,7 @@
 
 ![Unity](https://img.shields.io/badge/Unity-6-black) ![Quest 3](https://img.shields.io/badge/Meta-Quest%203-blue) ![Python](https://img.shields.io/badge/Python-3.12-yellow) ![OpenCV](https://img.shields.io/badge/OpenCV-4-green) ![macOS](https://img.shields.io/badge/runs%20on-macOS-lightgrey) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
-Add eye tracking to an Unity VR scene and see what people actually look at while they use it. This tool provides live gaze, fixations, scanpaths and heatmaps inside the headset, plus a CSV log and synced videos for analysis afterwards.
+Add eye tracking to a Unity VR scene and see what people actually look at while they use it. This tool provides live gaze, fixations, scanpaths and heatmaps inside the headset, plus a CSV log and synced videos for analysis afterwards.
 
 The Meta Quest 3 has no eye tracker, so this repo also shows how to build one yourself with a small USB infrared camera glued under the lens, a pupil tracker on a Mac, and the gaze streamed to the headset over Wi-Fi. The Unity side does not care where gaze comes from, so the same scripts work with a headset that has eye tracking built in.
 
@@ -105,6 +105,12 @@ In the headset, press **A** and follow the instructions. Press Enter on the Mac 
 | B | recalibrate |
 | Thumbstick click | view: heatmap, scanpath, both, off |
 
+**5. Analyse**
+```bash
+python tools/analyze_session.py sessions/<date_time>/headset_logs/session_<...>.csv
+```
+Writes the dwell, timeline and eye vs head figures plus a summary table to `docs/analysis/`.
+
 ## Results
 
 Single user (me), one Quest 3, sessions recorded. Not a study, a check that the pipeline works.
@@ -117,6 +123,44 @@ Single user (me), one Quest 3, sessions recorded. Not a study, a check that the 
 | Fixations logged in a 4 minute task | 106, median 0.6 s, each with the object looked at |
 
 The calibration numbers are measured on the calibration dots themselves. The accuracy grid, run after it, is the honest test, and there the error grew over the session when the headset moved on my face (see Limitations).
+
+### What one task session shows
+
+`tools/analyze_session.py` turns a headset log into the figures below. This is a 2.7 minute task with the saw and the file (calibration 1.3°), with calibration and accuracy checks cut out.
+
+<img src="docs/analysis/dwell.png" width="49%"> <img src="docs/analysis/eye_vs_head.png" width="49%">
+<img src="docs/analysis/timeline.png" width="100%">
+
+What I read from it:
+
+- **Small objects are hard to hit.** The tool got 1 % of the fixation time and the workbench under it 31 %. A tool handle seen from 60 cm is about 4° wide, so with 1 to 3° error plus some headset slip, gaze meant for the tool often lands on the bench. Object size decides which questions you can ask.
+- **The head is a poor stand-in for the eyes.** In 70 % of samples, eye gaze and head direction were more than 10° apart (median 17°). A study that logs only head direction would put attention on the wrong object much of the time.
+- **The data needs a quality filter.** 19 % of samples put the eye more than 40° off the head direction, more than eyes normally turn. Those are tracking errors, and they come in bursts that a per-sample check can catch.
+- **The timeline shows the work rhythm.** Looks at the room between tool use, a run of fixations on the bench and material around each grab, and the recalibration in the middle.
+
+This was a single session from me, so treat these as examples of what the pipeline can show, not as findings about people.
+
+## Blueprint: which gaze metrics this setup can support
+
+Based on the measured accuracy (about 1 to 3° after calibration, more after headset slip) and rate (about 10 samples per second).
+
+| Metric | What it tells a trainer | What it needs | Here |
+|---|---|---|---|
+| Dwell time per object | which parts of the station get attention | accuracy well below the object's angular size | yes for large objects (bench, panels, instruction boards); not reliable for small tools |
+| Seen or not seen before an action (for example a safety sign before the first grab) | procedure followed, cue noticed | events in the same log as gaze, object larger than about 5° | yes: grabs, hits and fixations share one timeline |
+| Order of fixations (scanpath) | planning, searching vs knowing where to look | fixation detection, about 100 ms timing | coarse: about 100 ms resolution at 10 Hz |
+| Fixation count and duration | searching vs focused work, uncertainty | 30 Hz or more for durations you can compare | rough only |
+| Eye vs head direction | whether a cheaper head-only setup would be enough | eye tracking | yes, and here the answer was no |
+| Saccade speed, pupil size (workload) | effort, stress | 120 Hz or more, controlled light | no |
+| Accuracy before and after the task | how far to trust the session | a short grid at the start and end | yes, built into the session |
+
+**Rules of thumb from building it**
+
+1. Check accuracy at the start and the end of every session, and drop sessions where it falls apart.
+2. Design areas of interest from the accuracy you have: about three times the error. At 2° that is about 6°, roughly a 6 cm object at arm's length.
+3. Log task events next to gaze. "Looked at the sign before grabbing the hammer" is one join, and it is the kind of question trainers ask.
+4. Filter physiologically impossible gaze before computing anything.
+5. Record the eye video. When a number looks odd, the video tells you whether it was the person or the tracker.
 
 ## Problems and solutions
 
@@ -134,10 +178,18 @@ The calibration numbers are measured on the calibration dots themselves. The acc
 
 ## Limitations
 
-- **One eye, 2D pupil tracking.** No corneal reflection yet, so if the headset slides on the face the gaze shifts. Recalibrate after you adjust the headset. Using the LED reflections (glints) to correct for this is the next step.
+- **One eye, 2D pupil tracking.** No corneal reflection yet, so if the headset slides on the face the gaze shifts. Recalibrate after you adjust the headset.
 - **About 10 gaze samples per second.** Enough for fixations on objects, not for saccade analysis. Commercial VR trackers run at 90 to 200 Hz.
 - **Tested on one person.** Eyelids, lashes, glasses and make-up will change how well the pupil is found.
 - **The Mac is in the loop.** The headset needs the Wi-Fi link to the Mac for gaze.
+
+## Future work
+
+- **Commercial headsets through OpenXR.** Read gaze from the OpenXR eye gaze extension (`XR_EXT_eye_gaze_interaction`, supported on Quest Pro, Varjo, Pico and HTC) as a second gaze source next to UDP. The calibration check, logging, AOIs and visualisations stay the same.
+- **VR vs real work.** Run the same task and the same object groups with wearable eye-tracking glasses at a real station, and compare dwell and order between VR and reality.
+- **Slip correction.** Use the LED reflections on the cornea (glints) as a reference, so headset movement does not shift the gaze.
+- **Higher rate.** The camera can run faster at lower resolution; the detector already runs at about 10 ms per frame.
+- **A user study.** More people, a fixed task, and object groups tagged with `GazeAOI` in the scene.
 
 ## Eye safety
 
@@ -147,9 +199,9 @@ The camera lights the eye with infrared from about 3 cm. Jason Orlosky measured 
 
 ```
 tracker/      eye tracker (Python): eye_tracker.py, pupil detectors
-tools/        run_session.sh, make_gif.py, make_pip.py, check_video.py, udp_listen.py
+tools/        run_session.sh, analyze_session.py, make_gif.py, make_pip.py, check_video.py, udp_listen.py
 unity/        Unity 6 project, gaze scripts in unity/Assets/GazeXR/
-docs/         Unity setup guide, development images
+docs/         Unity setup guide, analysis figures, development images
 media/        images and videos for this page
 data/samples/ a short eye video to try the tracker without hardware
 ```
@@ -174,12 +226,10 @@ Mammadov, F. (2026). gaze-XR-training: Eye tracking for Unity VR scenes with a D
 
 GitHub also shows a "Cite this repository" button (from [CITATION.cff](CITATION.cff)).
 
-## Credits
+## Credits and Licence
 
 - **Eye tracker base:** the Python 3D eye tracker and the Unity gaze script started from [JEOresearch/EyeTracker](https://github.com/JEOresearch/EyeTracker) by Jason Orlosky (MIT), and the hardware idea from his [DIY VR eye tracking guide](https://www.jeoresearch.com/vrtracker.html). Both were changed a lot here; the original license is kept in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - **VR workbench:** built with my team in the DH2670 Haptics course at KTH, used here with their permission.
-
-## License
 
 [Apache License 2.0](LICENSE). Code derived from JEOresearch/EyeTracker stays under its MIT license, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [NOTICE](NOTICE).
 
@@ -189,5 +239,3 @@ GitHub also shows a "Cite this repository" button (from [CITATION.cff](CITATION.
 - JEOresearch/EyeTracker. https://github.com/JEOresearch/EyeTracker
 - Salvucci, D. D., & Goldberg, J. H. (2000). Identifying fixations and saccades in eye-tracking protocols. *Proceedings of ETRA 2000*, 71–78.
 - Holmqvist, K., et al. (2011). *Eye Tracking: A Comprehensive Guide to Methods and Measures.* Oxford University Press.
-- Fischler, M. A., & Bolles, R. C. (1981). Random sample consensus. *Communications of the ACM*, 24(6), 381–395.
-- scrcpy. https://github.com/Genymobile/scrcpy

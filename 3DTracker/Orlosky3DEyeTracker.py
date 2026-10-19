@@ -75,6 +75,8 @@ class GazeSender:
         line = "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.3f" % (
             self.seq, time.time(), *map(float, origin), *map(float, direction), float(confidence))
         self.seq += 1
+        if recorder is not None:
+            recorder.row(line)
         if not udp_enabled:
             return line
         try:
@@ -87,7 +89,39 @@ class GazeSender:
 
 gaze_sender = GazeSender()
 
+
+class SessionRecorder:
+    """--record DIR: eye video with the overlay (eye.mp4) and every gaze packet (eye_gaze.csv).
+    seq in the CSV is the same seq the headset logs, so both sides line up exactly."""
+    def __init__(self, folder):
+        os.makedirs(folder, exist_ok=True)
+        self.folder = folder
+        self.video = None
+        self.csv = open(os.path.join(folder, "eye_gaze.csv"), "w")
+        self.csv.write("seq,mac_time,ox,oy,oz,dx,dy,dz,confidence\n")
+        print(f"Recording eye video and gaze to {folder}")
+
+    def frame(self, image):
+        if self.video is None:
+            h, w = image.shape[:2]
+            self.video = cv2.VideoWriter(os.path.join(self.folder, "eye.mp4"),
+                                         cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
+        self.video.write(image)
+
+    def row(self, line):
+        self.csv.write(line + "\n")
+
+    def close(self):
+        if self.video is not None:
+            self.video.release()
+        self.csv.close()
+        print(f"Saved {self.folder}")
+
+recorder = None
+
 def show(name, image):
+    if recorder is not None and name == "Frame with Ellipse and Rays":
+        recorder.frame(image)
     if not headless:
         cv2.imshow(name, image)
 
@@ -1178,12 +1212,17 @@ if __name__ == "__main__":
     ap.add_argument("--no-udp", action="store_true", help="do not send gaze packets")
     ap.add_argument("--headless", action="store_true", help="no windows; with --video, print a summary")
     ap.add_argument("--max-frames", type=int)
+    ap.add_argument("--record", metavar="DIR", help="save the eye video (with overlay) and all gaze packets here")
     ap.add_argument("--gaze", choices=["2d", "3d"], default="2d", help="2d: pupil centre + Unity calibration (default). 3d: Orlosky eye sphere")
     args = ap.parse_args()
     flip_mode, pupil_mode = args.flip, args.pupil
     UDP_HOST, UDP_PORT, udp_enabled = args.udp_host, args.udp_port, not args.no_udp
     headless = args.headless
     gaze_model = args.gaze
+    if args.record:
+        import atexit
+        recorder = SessionRecorder(args.record)
+        atexit.register(recorder.close)
     if args.video and headless:
         run_headless_video(args.video, args.max_frames)
     elif args.video:

@@ -2,7 +2,7 @@
 <img src="media/header.gif" width="100%" alt="Headset view of a VR workbench with live fixation spheres, saccade lines and a gaze heatmap, with the IR eye camera in the corner">
 
 
-![Unity](https://img.shields.io/badge/Unity-6-black) ![Quest 3](https://img.shields.io/badge/Meta-Quest%203-blue) ![Python](https://img.shields.io/badge/Python-3.12-yellow) ![OpenCV](https://img.shields.io/badge/OpenCV-4-green) ![macOS](https://img.shields.io/badge/runs%20on-macOS-lightgrey) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
+[![CI](https://github.com/fammad/gaze-XR-training/actions/workflows/ci.yml/badge.svg)](https://github.com/fammad/gaze-XR-training/actions/workflows/ci.yml) ![Unity](https://img.shields.io/badge/Unity-6-black) ![Quest 3](https://img.shields.io/badge/Meta-Quest%203-blue) ![Python](https://img.shields.io/badge/Python-3.12-yellow) ![OpenCV](https://img.shields.io/badge/OpenCV-4-green) ![macOS](https://img.shields.io/badge/runs%20on-macOS-lightgrey) ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
 Add eye tracking to a Unity VR scene and see what people actually look at while they use it. This tool provides live gaze, fixations, scanpaths and heatmaps inside the headset, plus a CSV log and synced videos for analysis afterwards.
 
@@ -66,6 +66,14 @@ Every gaze packet has a sequence number. The Mac saves it with the eye video and
 **Mounting tips.** Aim the camera before the glue sets, with the tracker window open. Looking straight ahead, the pupil should sit near the middle of the frame and look roughly round. A camera that looks up from too far below sees a flat sliver of pupil and the tracking gets bad. Tape the cable so it cannot pull the camera.
 
 ## Set it up yourself
+
+**Try it without hardware first.** The repo includes a short eye video and a real session log:
+```bash
+git clone https://github.com/fammad/gaze-XR-training.git && cd gaze-XR-training
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+python tracker/eye_tracker.py --video data/samples/gaze_sweep.mov --no-udp     # pupil tracking on a recorded eye
+python tools/analyze_session.py data/samples/session_example.csv --out /tmp/gaze   # figures and summary from a session
+```
 
 **You need:** Unity 6 with Android build support, a Quest in developer mode, a Mac with Python 3.12, and an IR camera inside the headset (see Hardware). Mac and Quest on the same Wi-Fi.
 
@@ -206,7 +214,8 @@ tools/        run_session.sh, analyze_session.py, make_gif.py, make_pip.py, chec
 unity/        Unity 6 project, gaze scripts in unity/Assets/GazeXR/
 docs/         Unity setup guide, analysis figures, development images
 media/        images and videos for this page
-data/samples/ a short eye video to try the tracker without hardware
+data/samples/ a short eye video and a session log to try everything without hardware
+.github/      CI: compiles the code and runs the tracker and the analysis on the samples
 ```
 
 ## Citation

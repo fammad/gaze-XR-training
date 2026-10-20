@@ -130,7 +130,7 @@ Single user (me), one Quest 3. Not a study, a check of what the pipeline can mea
 
 `tools/analyze_session.py` turns a headset log into the figures below: 99 seconds of work with saw, hammer and file, calibration and accuracy checks cut out.
 
-<img src="docs/analysis/dwell.png" width="49%"> <img src="docs/analysis/eye_vs_head.png" width="49%">
+<img src="docs/analysis/dwell.png" width="46%"> <img src="docs/analysis/eye_vs_head.png" width="49%">
 <img src="docs/analysis/timeline.png" width="100%">
 
 What I read from it:

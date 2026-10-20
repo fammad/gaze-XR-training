@@ -119,6 +119,8 @@ python tools/analyze_session.py sessions/<date_time>/headset_logs/session_<...>.
 ```
 Writes the dwell, timeline and eye vs head figures plus a summary table to `docs/analysis/`.
 
+**About the demo scene.** `unity/` holds the workbench scene I tested with. Its 3D models come from Unity Asset Store packs that may not be redistributed, so they are not in this repository. The scene opens with missing models until you import them from the Asset Store yourself: CoolWorks Studio Carpentry Tools, Morgue Room PBR, RainFall Bench Asset, SkySeries Freebie, Handpainted Grass and Ground Textures, Aquaset, Low Poly Metal Rack, Factory Tools, Animated Hands. The gaze scripts in `unity/Assets/GazeXR/` need none of them.
+
 ## Results
 
 Single user (me), one Quest 3. Not a study, a check of what the pipeline can measure. Numbers below are from the session with the best calibration.

@@ -113,3 +113,7 @@ InitTestScene*.unity*
 *.aab
 .vscode/
 *.slnx
+
+# Unity Asset Store packs: not redistributable, import them yourself (see README)
+/[Aa]ssets/3D Assets/
+/[Aa]ssets/3D Assets.meta
